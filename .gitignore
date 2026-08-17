@@ -11,7 +11,12 @@ Thumbs.db
 .netlify/
 coverage/
 apps/api/uploads/
-apps/api/prisma/dev.db*
+apps/api/dados/
+!apps/api/dados/.gitkeep
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
 .vscode/
 .idea/
 *.tsbuildinfo

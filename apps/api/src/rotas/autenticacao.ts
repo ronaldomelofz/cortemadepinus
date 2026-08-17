@@ -37,10 +37,7 @@ rotasAutenticacao.post(
     });
 
     const perfil = mapearUsuario(usuario);
-    res.status(201).json({
-      token: gerarToken({ id: usuario.id, email: usuario.email, role: usuario.role, nome: usuario.nome }),
-      usuario: perfil,
-    });
+    res.status(201).json({ token: gerarToken(perfil), usuario: perfil });
   }),
 );
 
@@ -55,10 +52,8 @@ rotasAutenticacao.post(
     }
     if (!usuario.ativo) throw naoAutorizado('Conta desativada. Fale com a central de serviços.');
 
-    res.json({
-      token: gerarToken({ id: usuario.id, email: usuario.email, role: usuario.role, nome: usuario.nome }),
-      usuario: mapearUsuario(usuario),
-    });
+    const perfil = mapearUsuario(usuario);
+    res.json({ token: gerarToken(perfil), usuario: perfil });
   }),
 );
 

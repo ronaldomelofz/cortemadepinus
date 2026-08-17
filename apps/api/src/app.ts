@@ -51,7 +51,13 @@ export function criarApp() {
   app.get('/saude', async (_req, res) => {
     try {
       await prisma.$queryRaw`SELECT 1`;
-      res.json({ ok: true, banco: 'conectado', versao: '1.0.0', horario: new Date().toISOString() });
+      res.json({
+        ok: true,
+        banco: env.DB_PROVIDER,
+        conexao: 'ok',
+        versao: '1.0.0',
+        horario: new Date().toISOString(),
+      });
     } catch (erro) {
       res.status(503).json({ ok: false, banco: 'indisponível', detalhes: String(erro) });
     }

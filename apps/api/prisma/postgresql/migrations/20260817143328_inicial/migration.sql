@@ -1,15 +1,6 @@
 -- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "public";
 
--- CreateEnum
-CREATE TYPE "Role" AS ENUM ('CLIENTE', 'ADMIN');
-
--- CreateEnum
-CREATE TYPE "StatusPedido" AS ENUM ('RASCUNHO', 'ENVIADO', 'EM_ANALISE', 'ORCAMENTO_ENVIADO', 'APROVADO', 'EM_PRODUCAO', 'PRONTO', 'ENTREGUE', 'CANCELADO');
-
--- CreateEnum
-CREATE TYPE "Veio" AS ENUM ('INDIFERENTE', 'COMPRIMENTO', 'LARGURA');
-
 -- CreateTable
 CREATE TABLE "usuarios" (
     "id" TEXT NOT NULL,
@@ -19,7 +10,7 @@ CREATE TABLE "usuarios" (
     "telefone" TEXT,
     "empresa" TEXT,
     "documento" TEXT,
-    "role" "Role" NOT NULL DEFAULT 'CLIENTE',
+    "role" TEXT NOT NULL DEFAULT 'CLIENTE',
     "ativo" BOOLEAN NOT NULL DEFAULT true,
     "criadoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "atualizadoEm" TIMESTAMP(3) NOT NULL,
@@ -30,14 +21,14 @@ CREATE TABLE "usuarios" (
 -- CreateTable
 CREATE TABLE "pedidos" (
     "id" TEXT NOT NULL,
-    "numero" SERIAL NOT NULL,
+    "numero" INTEGER NOT NULL,
     "clienteId" TEXT NOT NULL,
     "titulo" TEXT NOT NULL,
     "ambiente" TEXT,
     "observacoes" TEXT,
     "prazoDesejado" TEXT,
-    "status" "StatusPedido" NOT NULL DEFAULT 'RASCUNHO',
-    "valorOrcamento" DECIMAL(12,2),
+    "status" TEXT NOT NULL DEFAULT 'RASCUNHO',
+    "valorOrcamento" DOUBLE PRECISION,
     "criadoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "atualizadoEm" TIMESTAMP(3) NOT NULL,
     "enviadoEm" TIMESTAMP(3),
@@ -72,7 +63,7 @@ CREATE TABLE "pecas" (
     "largura" DOUBLE PRECISION NOT NULL,
     "altura" DOUBLE PRECISION NOT NULL,
     "descricao" TEXT NOT NULL,
-    "veio" "Veio" NOT NULL DEFAULT 'INDIFERENTE',
+    "veio" TEXT NOT NULL DEFAULT 'INDIFERENTE',
     "fitaL1" BOOLEAN NOT NULL DEFAULT false,
     "fitaL2" BOOLEAN NOT NULL DEFAULT false,
     "fitaC1" BOOLEAN NOT NULL DEFAULT false,
@@ -111,7 +102,7 @@ CREATE TABLE "mensagens" (
 CREATE TABLE "historico_status" (
     "id" TEXT NOT NULL,
     "pedidoId" TEXT NOT NULL,
-    "status" "StatusPedido" NOT NULL,
+    "status" TEXT NOT NULL,
     "nota" TEXT,
     "autorId" TEXT,
     "criadoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -135,13 +126,22 @@ CREATE UNIQUE INDEX "materiais_pedidoId_codigo_key" ON "materiais"("pedidoId", "
 CREATE INDEX "pecas_pedidoId_idx" ON "pecas"("pedidoId");
 
 -- CreateIndex
+CREATE INDEX "pecas_materialId_idx" ON "pecas"("materialId");
+
+-- CreateIndex
 CREATE INDEX "anexos_pedidoId_idx" ON "anexos"("pedidoId");
 
 -- CreateIndex
 CREATE INDEX "mensagens_pedidoId_criadoEm_idx" ON "mensagens"("pedidoId", "criadoEm");
 
 -- CreateIndex
+CREATE INDEX "mensagens_autorId_idx" ON "mensagens"("autorId");
+
+-- CreateIndex
 CREATE INDEX "historico_status_pedidoId_criadoEm_idx" ON "historico_status"("pedidoId", "criadoEm");
+
+-- CreateIndex
+CREATE INDEX "historico_status_autorId_idx" ON "historico_status"("autorId");
 
 -- AddForeignKey
 ALTER TABLE "pedidos" ADD CONSTRAINT "pedidos_clienteId_fkey" FOREIGN KEY ("clienteId") REFERENCES "usuarios"("id") ON DELETE CASCADE ON UPDATE CASCADE;

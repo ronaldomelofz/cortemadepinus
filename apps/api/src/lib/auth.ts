@@ -30,7 +30,13 @@ export async function conferirSenha(senha: string, hash: string): Promise<boolea
 }
 
 export function gerarToken(usuario: Autenticado): string {
-  return jwt.sign(usuario, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN } as jwt.SignOptions);
+  const conteudo: Autenticado = {
+    id: usuario.id,
+    email: usuario.email,
+    role: usuario.role,
+    nome: usuario.nome,
+  };
+  return jwt.sign(conteudo, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN } as jwt.SignOptions);
 }
 
 function lerToken(req: Request): string | null {

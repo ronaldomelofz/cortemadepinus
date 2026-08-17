@@ -1,5 +1,5 @@
-import type { Prisma, StatusPedido } from '@prisma/client';
-import { pedidoCompletoSchema, type PedidoInput } from '@cortemadepinus/shared';
+import type { Prisma } from '@prisma/client';
+import { pedidoCompletoSchema, type PedidoInput, type StatusPedido } from '@cortemadepinus/shared';
 import { naoEncontrado, proibido, requisicaoInvalida } from './erros';
 import { inclusaoPedido, mapearPedido } from './mapear';
 import { prisma } from '../prisma';
@@ -41,14 +41,46 @@ function montarFilhos(dados: PedidoInput) {
   return { materiais };
 }
 
+/**
+ * O numero sequencial do pedido e gerado pela aplicacao (e nao por uma
+ * sequence do banco) para que o mesmo schema sirva a SQLite e PostgreSQL.
+ * A coluna e unica, entao uma corrida entre dois cadastros simultaneos falha
+ * na gravacao e a tentativa seguinte pega o proximo numero livre.
+ */
+async function proximoNumero(tx: Prisma.TransactionClient): Promise<number> {
+  const maior = await tx.pedido.aggregate({ _max: { numero: true } });
+  return (maior._max.numero ?? 0) + 1;
+}
+
+function ehColisaoDeNumero(erro: unknown): boolean {
+  return (
+    typeof erro === 'object' &&
+    erro !== null &&
+    (erro as { code?: string }).code === 'P2002' &&
+    String((erro as { meta?: { target?: unknown } }).meta?.target ?? '').includes('numero')
+  );
+}
+
 export async function criarPedido(clienteId: string, entrada: unknown) {
   const dados = validarPedido(entrada);
+
+  for (let tentativa = 1; ; tentativa += 1) {
+    try {
+      return await gravarNovoPedido(clienteId, dados);
+    } catch (erro) {
+      if (tentativa >= 3 || !ehColisaoDeNumero(erro)) throw erro;
+    }
+  }
+}
+
+async function gravarNovoPedido(clienteId: string, dados: PedidoInput) {
   const { materiais } = montarFilhos(dados);
 
   const pedido = await prisma.$transaction(async (tx) => {
     const criado = await tx.pedido.create({
       data: {
         clienteId,
+        numero: await proximoNumero(tx),
         titulo: dados.titulo,
         ambiente: dados.ambiente || null,
         observacoes: dados.observacoes || null,
@@ -139,17 +171,20 @@ export async function buscarPedidoAutorizado(
   return pedido;
 }
 
-export function garantirEdicaoDoCliente(status: StatusPedido): void {
-  if (!EDITAVEL_PELO_CLIENTE.includes(status)) {
+// O status e gravado como texto para o schema servir a SQLite e PostgreSQL,
+// entao os parametros chegam como string e sao estreitados aqui.
+export function garantirEdicaoDoCliente(status: string): void {
+  if (!EDITAVEL_PELO_CLIENTE.includes(status as StatusPedido)) {
     throw requisicaoInvalida(
       'O pedido já foi enviado à central e não pode mais ser alterado. Envie uma mensagem solicitando ajuste.',
     );
   }
 }
 
-export function garantirTransicao(atual: StatusPedido, novo: StatusPedido): void {
+export function garantirTransicao(atual: string, novo: StatusPedido): void {
   if (atual === novo) return;
-  if (!TRANSICOES[atual].includes(novo)) {
+  const permitidas = TRANSICOES[atual as StatusPedido] ?? [];
+  if (!permitidas.includes(novo)) {
     throw requisicaoInvalida(`Não é possível mudar de "${atual}" para "${novo}"`);
   }
 }

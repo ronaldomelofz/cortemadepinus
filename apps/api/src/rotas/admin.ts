@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { calcularResumo, mudarStatusSchema, STATUS_PEDIDO } from '@cortemadepinus/shared';
 import { exigirAdmin, exigirAutenticacao } from '../lib/auth';
+import { contemTexto } from '../lib/busca';
 import { assincrono, naoEncontrado } from '../lib/erros';
 import { inclusaoPedido, mapearPedido, mapearUsuario } from '../lib/mapear';
 import { garantirTransicao } from '../lib/pedidoServico';
@@ -29,10 +30,10 @@ rotasAdmin.get(
       ...(filtro.busca
         ? {
             OR: [
-              { titulo: { contains: filtro.busca, mode: 'insensitive' as const } },
-              { ambiente: { contains: filtro.busca, mode: 'insensitive' as const } },
-              { cliente: { nome: { contains: filtro.busca, mode: 'insensitive' as const } } },
-              { cliente: { empresa: { contains: filtro.busca, mode: 'insensitive' as const } } },
+              { titulo: contemTexto(filtro.busca) },
+              { ambiente: contemTexto(filtro.busca) },
+              { cliente: { nome: contemTexto(filtro.busca) } },
+              { cliente: { empresa: contemTexto(filtro.busca) } },
             ],
           }
         : {}),
@@ -96,9 +97,9 @@ rotasAdmin.get(
         ...(busca
           ? {
               OR: [
-                { nome: { contains: busca, mode: 'insensitive' as const } },
-                { email: { contains: busca, mode: 'insensitive' as const } },
-                { empresa: { contains: busca, mode: 'insensitive' as const } },
+                { nome: contemTexto(busca) },
+                { email: contemTexto(busca) },
+                { empresa: contemTexto(busca) },
               ],
             }
           : {}),

@@ -5,7 +5,6 @@ import type {
   Mensagem as MensagemPrisma,
   Peca as PecaPrisma,
   Pedido as PedidoPrisma,
-  Prisma,
   Usuario as UsuarioPrisma,
 } from '@prisma/client';
 import type {
@@ -15,7 +14,10 @@ import type {
   Mensagem,
   Peca,
   Pedido,
+  Role,
+  StatusPedido,
   Usuario,
+  Veio,
 } from '@cortemadepinus/shared';
 
 type PedidoCompleto = PedidoPrisma & {
@@ -27,9 +29,6 @@ type PedidoCompleto = PedidoPrisma & {
   historico?: (HistoricoPrisma & { autor: UsuarioPrisma | null })[];
 };
 
-const paraNumero = (valor: Prisma.Decimal | null): number | null =>
-  valor === null ? null : Number(valor);
-
 export function mapearUsuario(usuario: UsuarioPrisma): Usuario {
   return {
     id: usuario.id,
@@ -38,7 +37,7 @@ export function mapearUsuario(usuario: UsuarioPrisma): Usuario {
     telefone: usuario.telefone,
     empresa: usuario.empresa,
     documento: usuario.documento,
-    role: usuario.role,
+    role: usuario.role as Role,
     ativo: usuario.ativo,
     criadoEm: usuario.criadoEm.toISOString(),
   };
@@ -70,7 +69,7 @@ export function mapearPeca(peca: PecaPrisma): Peca {
     largura: peca.largura,
     altura: peca.altura,
     descricao: peca.descricao,
-    veio: peca.veio,
+    veio: peca.veio as Veio,
     fitaL1: peca.fitaL1,
     fitaL2: peca.fitaL2,
     fitaC1: peca.fitaC1,
@@ -98,7 +97,7 @@ export function mapearMensagem(mensagem: MensagemPrisma & { autor: UsuarioPrisma
     pedidoId: mensagem.pedidoId,
     autorId: mensagem.autorId,
     autorNome: mensagem.autor.nome,
-    autorRole: mensagem.autor.role,
+    autorRole: mensagem.autor.role as Role,
     texto: mensagem.texto,
     criadoEm: mensagem.criadoEm.toISOString(),
   };
@@ -110,7 +109,7 @@ export function mapearHistorico(
   return {
     id: historico.id,
     pedidoId: historico.pedidoId,
-    status: historico.status,
+    status: historico.status as StatusPedido,
     nota: historico.nota,
     autorNome: historico.autor?.nome ?? null,
     criadoEm: historico.criadoEm.toISOString(),
@@ -135,8 +134,8 @@ export function mapearPedido(pedido: PedidoCompleto): Pedido {
     ambiente: pedido.ambiente,
     observacoes: pedido.observacoes,
     prazoDesejado: pedido.prazoDesejado,
-    status: pedido.status,
-    valorOrcamento: paraNumero(pedido.valorOrcamento),
+    status: pedido.status as StatusPedido,
+    valorOrcamento: pedido.valorOrcamento,
     criadoEm: pedido.criadoEm.toISOString(),
     atualizadoEm: pedido.atualizadoEm.toISOString(),
     enviadoEm: pedido.enviadoEm?.toISOString() ?? null,

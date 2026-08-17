@@ -18,11 +18,12 @@ seccionadora.
 3. [Stack](#stack-tudo-open-source)
 4. [Formato Corte Certo](#formato-corte-certo)
 5. [Rodando na sua máquina](#rodando-na-sua-máquina)
-6. [Servidor local com Docker](#servidor-local-com-docker)
-7. [Expondo a API para a internet](#expondo-a-api-para-a-internet)
-8. [Deploy no Netlify](#deploy-no-netlify)
-9. [Referência da API](#referência-da-api)
-10. [Backup e manutenção](#backup-e-manutenção)
+6. [24/7 no Windows](#247-no-windows-sem-docker-e-sem-custo)
+7. [Servidor local com Docker](#servidor-local-com-docker)
+8. [Expondo a API para a internet](#expondo-a-api-para-a-internet)
+9. [Deploy no Netlify](#deploy-no-netlify)
+10. [Referência da API](#referência-da-api)
+11. [Backup e manutenção](#backup-e-manutenção)
 
 ---
 
@@ -48,8 +49,8 @@ validadas no servidor.
 │  Netlify (CDN global)    │ ───────────────────────► │  Servidor local MadePinus     │
 │  React + Vite (SPA)      │                          │                               │
 │  cortemadepinus.netlify  │ ◄─────────────────────── │  API Node/Express (:4000)     │
-└──────────────────────────┘                          │  PostgreSQL 16                │
-             ▲                                        │  Anexos em volume Docker      │
+└──────────────────────────┘                          │  SQLite (arquivo local)       │
+             ▲                                        │  Anexos em disco              │
              │ deploy automático                      └───────────────────────────────┘
       ┌──────┴───────┐                                              ▲
       │   GitHub     │                                              │
@@ -61,13 +62,17 @@ fala com a API pela URL configurada em `VITE_API_URL`.
 
 ## Stack (tudo open source)
 
-| Camada | Tecnologia | Licença |
-| --- | --- | --- |
-| Front-end | React 18, Vite 6, React Router 7, Tailwind CSS 4 | MIT |
-| API | Node.js 20, Express 4, Zod, JWT, Multer | MIT |
-| Banco | PostgreSQL 16 + Prisma ORM | PostgreSQL / Apache-2.0 |
-| Infra | Docker Compose, Cloudflare Tunnel (cloudflared) | Apache-2.0 |
-| Hospedagem do site | Netlify (plano gratuito) | — |
+| Camada | Tecnologia | Licença | Custo |
+| --- | --- | --- | --- |
+| Front-end | React 18, Vite 6, React Router 7, Tailwind CSS 4 | MIT | zero |
+| API | Node.js 20, Express 4, Zod, JWT, Multer | MIT | zero |
+| Banco | **SQLite** (arquivo no servidor) + Prisma ORM | domínio público / Apache-2.0 | **zero** |
+| Infra 24/7 | Agendador de Tarefas do Windows + Cloudflare Tunnel | nativo / Apache-2.0 | **zero** |
+| Hospedagem do site | Netlify (plano gratuito) | — | **zero** |
+
+O banco padrão é o **SQLite**: um único arquivo (`apps/api/dados/cortemadepinus.db`), sem senha,
+sem serviço extra e sem mensalidade. PostgreSQL continua disponível se você já tiver um, mas não
+é necessário.
 
 Estrutura do monorepo:
 
@@ -134,7 +139,7 @@ girada para caber na chapa; com veio definido, não.
 
 ## Rodando na sua máquina
 
-Pré-requisitos: **Node.js 20+** e um **PostgreSQL** acessível.
+Pré-requisito: **Node.js 20+**. O banco SQLite é criado automaticamente — não instale PostgreSQL.
 
 ```bash
 git clone https://github.com/ronaldomelofz/cortemadepinus.git
@@ -142,33 +147,24 @@ cd cortemadepinus
 npm install
 ```
 
-### 1. Banco de dados
-
-Crie o banco e o usuário (ajuste a senha):
-
-```sql
-CREATE USER madepinus WITH PASSWORD 'madepinus';
-CREATE DATABASE cortemadepinus OWNER madepinus;
-```
-
-### 2. Variáveis de ambiente
+### 1. Variáveis de ambiente
 
 ```bash
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env
 ```
 
-Edite `apps/api/.env` com a `DATABASE_URL` correta e gere um segredo forte:
+Gere um segredo forte e cole em `JWT_SECRET`:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 ```
 
-### 3. Migrações e dados iniciais
+### 2. Criar o banco SQLite e o administrador
 
 ```bash
-npm run prisma:migrate -w @cortemadepinus/api   # cria as tabelas
-npm run seed -w @cortemadepinus/api             # cria o admin e um pedido de exemplo
+npm run prisma:deploy -w @cortemadepinus/api   # cria apps/api/dados/cortemadepinus.db
+npm run seed -w @cortemadepinus/api            # cria o admin e um pedido de exemplo
 ```
 
 O seed cria:
@@ -178,7 +174,7 @@ O seed cria:
 
 > Troque a senha do administrador antes de expor o sistema.
 
-### 4. Subir tudo
+### 3. Subir tudo
 
 ```bash
 npm run dev
@@ -193,24 +189,34 @@ Testes da regra de negócio (layout Corte Certo, importação, cálculos):
 npm test -w @cortemadepinus/shared
 ```
 
+## 24/7 no Windows (sem Docker e sem custo)
+
+O site no Netlify já fica no ar o tempo todo. Para os clientes enviarem pedidos de madrugada, a
+**API também precisa estar ligada** no servidor da MadePinus.
+
+```powershell
+.\scripts\configurar-servidor-windows.ps1 -SenhaAdmin 'UmaSenhaForte123'
+.\scripts\instalar-servico-windows.ps1
+```
+
+A segunda linha registra uma tarefa nativa do Windows: a API sobe no boot, reinicia sozinha se
+cair e grava log em `apps/api/dados/api.log`. Deixe o computador da central ligado (ou use um
+mini-PC que não desliga).
+
 ## Servidor local com Docker
 
-No servidor da MadePinus, o `docker-compose.yml` sobe PostgreSQL, API, rotina de backup e (opcional)
-o túnel:
+O `docker-compose.yml` sobe a API com SQLite, backup diário do arquivo e (opcional) o túnel:
 
 ```bash
-cp .env.example .env      # ajuste senhas, CORS_ORIGINS e ADMIN_SENHA
+cp .env.example .env      # ajuste JWT_SECRET, CORS_ORIGINS e ADMIN_SENHA
 docker compose up -d
 docker compose logs -f api
 ```
 
-Serviços:
-
 | Serviço | Descrição |
 | --- | --- |
-| `banco` | PostgreSQL 16 com volume persistente `dados-postgres`. |
-| `api` | Aplica as migrações, garante o admin e sobe a API na porta 4000. |
-| `backup` | `pg_dump` diário compactado em `./backups`, retenção de 14 dias. |
+| `api` | SQLite + API na porta 4000. |
+| `backup` | Cópia diária de `cortemadepinus.db` em `./backups` (14 dias). |
 | `tunel` | Cloudflare Tunnel (perfil `tunel`, só sobe se você pedir). |
 
 ## Expondo a API para a internet
@@ -298,18 +304,14 @@ Extensões aceitas em anexos: `pdf, png, jpg, jpeg, webp, csv, txt, xls, xlsx, d
 ## Backup e manutenção
 
 ```bash
-# Backup manual
-docker compose exec banco pg_dump -U madepinus cortemadepinus | gzip > backup.sql.gz
+# Backup manual (o banco inteiro é um arquivo)
+copy apps\api\dados\cortemadepinus.db backups\cortemadepinus-%DATE%.db
 
-# Restauração
-gunzip -c backup.sql.gz | docker compose exec -T banco psql -U madepinus -d cortemadepinus
-
-# Ver as tabelas pela interface do Prisma
+# Ver as tabelas pela interface do Prisma (gratuita)
 npm run prisma:studio -w @cortemadepinus/api
 ```
 
-Os anexos ficam no volume `dados-uploads` (ou em `apps/api/uploads` fora do Docker) — inclua essa
-pasta na sua rotina de backup junto com o dump do banco.
+Os anexos ficam em `apps/api/uploads` — copie essa pasta junto com o arquivo `.db`.
 
 ### Checklist de segurança antes de abrir para os clientes
 

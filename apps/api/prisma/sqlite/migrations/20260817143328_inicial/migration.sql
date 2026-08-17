@@ -1,0 +1,136 @@
+-- CreateTable
+CREATE TABLE "usuarios" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "nome" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "senhaHash" TEXT NOT NULL,
+    "telefone" TEXT,
+    "empresa" TEXT,
+    "documento" TEXT,
+    "role" TEXT NOT NULL DEFAULT 'CLIENTE',
+    "ativo" BOOLEAN NOT NULL DEFAULT true,
+    "criadoEm" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizadoEm" DATETIME NOT NULL
+);
+
+-- CreateTable
+CREATE TABLE "pedidos" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "numero" INTEGER NOT NULL,
+    "clienteId" TEXT NOT NULL,
+    "titulo" TEXT NOT NULL,
+    "ambiente" TEXT,
+    "observacoes" TEXT,
+    "prazoDesejado" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'RASCUNHO',
+    "valorOrcamento" REAL,
+    "criadoEm" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizadoEm" DATETIME NOT NULL,
+    "enviadoEm" DATETIME,
+    CONSTRAINT "pedidos_clienteId_fkey" FOREIGN KEY ("clienteId") REFERENCES "usuarios" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "materiais" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "pedidoId" TEXT NOT NULL,
+    "codigo" INTEGER NOT NULL,
+    "descricao" TEXT NOT NULL,
+    "espessura" REAL NOT NULL,
+    "cor" TEXT,
+    "chapaLargura" REAL NOT NULL,
+    "chapaAltura" REAL NOT NULL,
+    "fornecidoPeloCliente" BOOLEAN NOT NULL DEFAULT false,
+    "quantidadeChapas" INTEGER,
+    "ordem" INTEGER NOT NULL DEFAULT 0,
+    CONSTRAINT "materiais_pedidoId_fkey" FOREIGN KEY ("pedidoId") REFERENCES "pedidos" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "pecas" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "pedidoId" TEXT NOT NULL,
+    "materialId" TEXT NOT NULL,
+    "codigo" INTEGER NOT NULL,
+    "quantidade" INTEGER NOT NULL,
+    "largura" REAL NOT NULL,
+    "altura" REAL NOT NULL,
+    "descricao" TEXT NOT NULL,
+    "veio" TEXT NOT NULL DEFAULT 'INDIFERENTE',
+    "fitaL1" BOOLEAN NOT NULL DEFAULT false,
+    "fitaL2" BOOLEAN NOT NULL DEFAULT false,
+    "fitaC1" BOOLEAN NOT NULL DEFAULT false,
+    "fitaC2" BOOLEAN NOT NULL DEFAULT false,
+    "observacao" TEXT,
+    "ordem" INTEGER NOT NULL DEFAULT 0,
+    CONSTRAINT "pecas_pedidoId_fkey" FOREIGN KEY ("pedidoId") REFERENCES "pedidos" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "pecas_materialId_fkey" FOREIGN KEY ("materialId") REFERENCES "materiais" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "anexos" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "pedidoId" TEXT NOT NULL,
+    "nomeOriginal" TEXT NOT NULL,
+    "nomeArmazenado" TEXT NOT NULL,
+    "mimeType" TEXT NOT NULL,
+    "tamanho" INTEGER NOT NULL,
+    "criadoEm" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "anexos_pedidoId_fkey" FOREIGN KEY ("pedidoId") REFERENCES "pedidos" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "mensagens" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "pedidoId" TEXT NOT NULL,
+    "autorId" TEXT NOT NULL,
+    "texto" TEXT NOT NULL,
+    "criadoEm" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "mensagens_pedidoId_fkey" FOREIGN KEY ("pedidoId") REFERENCES "pedidos" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "mensagens_autorId_fkey" FOREIGN KEY ("autorId") REFERENCES "usuarios" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "historico_status" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "pedidoId" TEXT NOT NULL,
+    "status" TEXT NOT NULL,
+    "nota" TEXT,
+    "autorId" TEXT,
+    "criadoEm" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "historico_status_pedidoId_fkey" FOREIGN KEY ("pedidoId") REFERENCES "pedidos" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "historico_status_autorId_fkey" FOREIGN KEY ("autorId") REFERENCES "usuarios" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "usuarios_email_key" ON "usuarios"("email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "pedidos_numero_key" ON "pedidos"("numero");
+
+-- CreateIndex
+CREATE INDEX "pedidos_clienteId_status_idx" ON "pedidos"("clienteId", "status");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "materiais_pedidoId_codigo_key" ON "materiais"("pedidoId", "codigo");
+
+-- CreateIndex
+CREATE INDEX "pecas_pedidoId_idx" ON "pecas"("pedidoId");
+
+-- CreateIndex
+CREATE INDEX "pecas_materialId_idx" ON "pecas"("materialId");
+
+-- CreateIndex
+CREATE INDEX "anexos_pedidoId_idx" ON "anexos"("pedidoId");
+
+-- CreateIndex
+CREATE INDEX "mensagens_pedidoId_criadoEm_idx" ON "mensagens"("pedidoId", "criadoEm");
+
+-- CreateIndex
+CREATE INDEX "mensagens_autorId_idx" ON "mensagens"("autorId");
+
+-- CreateIndex
+CREATE INDEX "historico_status_pedidoId_criadoEm_idx" ON "historico_status"("pedidoId", "criadoEm");
+
+-- CreateIndex
+CREATE INDEX "historico_status_autorId_idx" ON "historico_status"("autorId");

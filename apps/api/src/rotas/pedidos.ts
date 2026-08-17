@@ -9,6 +9,7 @@ import {
   nomeArquivo,
 } from '@cortemadepinus/shared';
 import { exigirAutenticacao } from '../lib/auth';
+import { contemTexto } from '../lib/busca';
 import { assincrono, naoEncontrado, proibido, requisicaoInvalida } from '../lib/erros';
 import { inclusaoPedido, mapearMensagem, mapearPedido } from '../lib/mapear';
 import {
@@ -37,14 +38,9 @@ rotasPedidos.get(
     const filtro = filtroSchema.parse(req.query);
     const where = {
       clienteId: req.usuario!.id,
-      ...(filtro.status ? { status: filtro.status as never } : {}),
+      ...(filtro.status ? { status: filtro.status } : {}),
       ...(filtro.busca
-        ? {
-            OR: [
-              { titulo: { contains: filtro.busca, mode: 'insensitive' as const } },
-              { ambiente: { contains: filtro.busca, mode: 'insensitive' as const } },
-            ],
-          }
+        ? { OR: [{ titulo: contemTexto(filtro.busca) }, { ambiente: contemTexto(filtro.busca) }] }
         : {}),
     };
 

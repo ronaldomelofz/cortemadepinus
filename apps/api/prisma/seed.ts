@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
 import { env } from '../src/env';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({ datasources: { db: { url: env.DATABASE_URL } } });
 
 async function main() {
   const admin = await prisma.usuario.upsert({
@@ -41,9 +41,12 @@ async function main() {
     return;
   }
 
+  const ultimo = await prisma.pedido.aggregate({ _max: { numero: true } });
+
   const pedido = await prisma.pedido.create({
     data: {
       clienteId: cliente.id,
+      numero: (ultimo._max.numero ?? 0) + 1,
       titulo: 'Cozinha Apartamento 302',
       ambiente: 'Cozinha',
       observacoes: 'Fita de borda na mesma cor da chapa. Retirada na loja.',

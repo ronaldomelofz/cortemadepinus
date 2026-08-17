@@ -29,7 +29,7 @@ jobs:
       - name: Build da API
         run: npm run build --workspace @cortemadepinus/api
         env:
-          DATABASE_URL: postgresql://usuario:senha@localhost:5432/banco?schema=public
+          DB_PROVIDER: sqlite
 
       - name: Build do site
         run: npm run build --workspace @cortemadepinus/web
