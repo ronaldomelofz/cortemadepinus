@@ -33,14 +33,14 @@ const RECURSOS = [
       'Peças maiores que a chapa, medidas abaixo do mínimo da seccionadora e materiais sem cadastro são apontados antes do envio.',
   },
   {
-    titulo: 'Fita de borda e veio',
+    titulo: 'Sentido do veio',
     texto:
-      'Marque C1, C2, L1 e L2 e o sentido do veio. Calculamos os metros lineares de fita e respeitamos a orientação no corte.',
+      'Informe se o veio segue o comprimento ou a largura. A central respeita essa orientação na seccionadora.',
   },
   {
     titulo: 'Resumo instantâneo',
     texto:
-      'Área total em m², número de peças, metros de fita e estimativa de chapas necessárias, atualizados enquanto você digita.',
+      'Área total em m², número de peças e estimativa de chapas necessárias, atualizados enquanto você digita.',
   },
 ];
 

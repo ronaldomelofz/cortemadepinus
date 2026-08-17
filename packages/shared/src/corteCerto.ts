@@ -14,6 +14,7 @@
  */
 
 import type { Material, Peca, Pedido, Veio } from './types';
+import { RECURSOS } from './recursos';
 
 export interface LinhaCorteCerto {
   codigo: number;
@@ -71,16 +72,18 @@ export function montarLinhas(pedido: Pick<Pedido, 'materiais' | 'pecas'>): Linha
   });
 }
 
-/** Resume veio e fitas de borda em um texto curto para o campo livre do TXT. */
+/** Resume veio e (quando ativo) fitas de borda no campo livre do TXT. */
 export function montarObservacao(peca: Peca): string {
   const partes: string[] = [];
-  const fitas = [
-    peca.fitaC1 ? 'C1' : null,
-    peca.fitaC2 ? 'C2' : null,
-    peca.fitaL1 ? 'L1' : null,
-    peca.fitaL2 ? 'L2' : null,
-  ].filter(Boolean);
-  if (fitas.length) partes.push(`FITA ${fitas.join('+')}`);
+  if (RECURSOS.fitaDeBorda) {
+    const fitas = [
+      peca.fitaC1 ? 'C1' : null,
+      peca.fitaC2 ? 'C2' : null,
+      peca.fitaL1 ? 'L1' : null,
+      peca.fitaL2 ? 'L2' : null,
+    ].filter(Boolean);
+    if (fitas.length) partes.push(`FITA ${fitas.join('+')}`);
+  }
   if (peca.veio !== 'INDIFERENTE') partes.push(`VEIO ${peca.veio}`);
   if (peca.observacao) partes.push(peca.observacao);
   return sanitizarDescricao(partes.join(' | '));
@@ -123,8 +126,6 @@ export function exportarTxtCorteCerto(pedido: Pick<Pedido, 'materiais' | 'pecas'
 
 /**
  * Planilha completa para o chao de fabrica (separador ";", padrao Excel pt-BR).
- * Traz fitas de borda, veio e material por extenso, que nao cabem no layout
- * enxuto do Corte Certo.
  */
 export function exportarRelatorioProducaoCsv(pedido: Pedido): string {
   const materiais = mapaMateriais(pedido.materiais);
@@ -139,10 +140,7 @@ export function exportarRelatorioProducaoCsv(pedido: Pedido): string {
     'Espessura (mm)',
     'Cor',
     'Veio',
-    'Fita C1',
-    'Fita C2',
-    'Fita L1',
-    'Fita L2',
+    ...(RECURSOS.fitaDeBorda ? ['Fita C1', 'Fita C2', 'Fita L1', 'Fita L2'] : []),
     'Area unit. (m2)',
     'Area total (m2)',
     'Observacao',
@@ -162,10 +160,9 @@ export function exportarRelatorioProducaoCsv(pedido: Pedido): string {
       material ? formatarNumero(material.espessura, 2) : '',
       sanitizarDescricao(material?.cor ?? '', ';'),
       peca.veio,
-      peca.fitaC1 ? 'X' : '',
-      peca.fitaC2 ? 'X' : '',
-      peca.fitaL1 ? 'X' : '',
-      peca.fitaL2 ? 'X' : '',
+      ...(RECURSOS.fitaDeBorda
+        ? [peca.fitaC1 ? 'X' : '', peca.fitaC2 ? 'X' : '', peca.fitaL1 ? 'X' : '', peca.fitaL2 ? 'X' : '']
+        : []),
       areaUnit.toFixed(4).replace('.', ','),
       (areaUnit * peca.quantidade).toFixed(4).replace('.', ','),
       sanitizarDescricao(peca.observacao ?? '', ';'),

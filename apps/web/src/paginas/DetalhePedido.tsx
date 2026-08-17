@@ -4,7 +4,6 @@ import {
   calcularResumo,
   formatarData,
   formatarM2,
-  formatarMl,
   formatarMoeda,
   STATUS_LABEL,
   VEIO_LABEL,
@@ -134,11 +133,10 @@ export function DetalhePedido() {
 
       {erro && <Aviso tipo="erro">{erro}</Aviso>}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Metrica rotulo="Itens" valor={resumo.totalItens} />
         <Metrica rotulo="Peças" valor={resumo.totalPecas} />
         <Metrica rotulo="Área total" valor={formatarM2(resumo.areaTotalM2)} />
-        <Metrica rotulo="Fita de borda" valor={formatarMl(resumo.perimetroFitaMl)} />
         <Metrica
           rotulo="Orçamento"
           valor={pedido.valorOrcamento != null ? formatarMoeda(pedido.valorOrcamento) : '—'}
@@ -148,8 +146,8 @@ export function DetalhePedido() {
       <section className="cartao p-5">
         <h2 className="mb-3 text-base font-bold text-stone-900">Arquivos para a produção</h2>
         <p className="mb-4 text-sm text-stone-500">
-          O CSV e o TXT seguem o layout oficial de importação do Corte Certo. A planilha de produção traz fita
-          de borda, veio e material por extenso.
+          O CSV e o TXT seguem o layout oficial de importação do Corte Certo. A planilha de produção traz veio
+          e material por extenso.
         </p>
         <div className="flex flex-wrap gap-2">
           <BotaoDownload pedidoId={pedido.id} formato="csv" rotulo="CSV Corte Certo" />
@@ -216,17 +214,10 @@ export function DetalhePedido() {
                 <th className="px-3 py-2 text-left font-semibold">Descrição</th>
                 <th className="px-3 py-2 text-left font-semibold">Material</th>
                 <th className="px-3 py-2 text-left font-semibold">Veio</th>
-                <th className="px-3 py-2 text-left font-semibold">Fitas</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100 bg-white">
               {pedido.pecas.map((peca) => {
-                const fitas = [
-                  peca.fitaC1 && 'C1',
-                  peca.fitaC2 && 'C2',
-                  peca.fitaL1 && 'L1',
-                  peca.fitaL2 && 'L2',
-                ].filter(Boolean);
                 return (
                   <tr key={peca.id}>
                     <td className="px-3 py-2 tabular-nums">{peca.codigo}</td>
@@ -238,7 +229,6 @@ export function DetalhePedido() {
                       {materiaisPorId.get(peca.materialId)?.descricao ?? '—'}
                     </td>
                     <td className="px-3 py-2 text-stone-600">{VEIO_LABEL[peca.veio]}</td>
-                    <td className="px-3 py-2 text-stone-600">{fitas.join(' + ') || '—'}</td>
                   </tr>
                 );
               })}

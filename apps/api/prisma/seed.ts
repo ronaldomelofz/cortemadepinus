@@ -49,7 +49,7 @@ async function main() {
       numero: (ultimo._max.numero ?? 0) + 1,
       titulo: 'Cozinha Apartamento 302',
       ambiente: 'Cozinha',
-      observacoes: 'Fita de borda na mesma cor da chapa. Retirada na loja.',
+      observacoes: 'Retirada na loja.',
       prazoDesejado: '5 dias úteis',
       status: 'ENVIADO',
       enviadoEm: new Date(),

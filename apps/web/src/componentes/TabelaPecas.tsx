@@ -12,9 +12,6 @@ interface Props {
   aoColar: (texto: string) => void;
 }
 
-const CAIXA_FITA =
-  'size-4 cursor-pointer rounded border-stone-300 text-madeira-700 focus:ring-madeira-500';
-
 export function TabelaPecas({
   pecas,
   materiais,
@@ -36,7 +33,7 @@ export function TabelaPecas({
         }
       }}
     >
-      <table className="w-full min-w-[1120px] border-collapse text-sm">
+      <table className="w-full min-w-[980px] border-collapse text-sm">
         <thead className="bg-stone-100 text-xs uppercase tracking-wide text-stone-500">
           <tr>
             <th className="w-10 px-2 py-2 text-left font-semibold">#</th>
@@ -47,9 +44,6 @@ export function TabelaPecas({
             <th className="w-24 px-2 py-2 text-right font-semibold">Altura</th>
             <th className="min-w-48 px-2 py-2 text-left font-semibold">Descrição</th>
             <th className="w-40 px-2 py-2 text-left font-semibold">Veio</th>
-            <th className="w-32 px-2 py-2 text-center font-semibold" title="Fitas de borda">
-              Fita C1 C2 L1 L2
-            </th>
             <th className="w-16 px-2 py-2 text-center font-semibold">Ações</th>
           </tr>
         </thead>
@@ -126,20 +120,6 @@ export function TabelaPecas({
                       </option>
                     ))}
                   </select>
-                </td>
-                <td className="px-2 py-1.5">
-                  <div className="flex items-center justify-center gap-2">
-                    {(['fitaC1', 'fitaC2', 'fitaL1', 'fitaL2'] as const).map((campo) => (
-                      <input
-                        key={campo}
-                        type="checkbox"
-                        className={CAIXA_FITA}
-                        title={campo.replace('fita', 'Fita ')}
-                        checked={peca[campo]}
-                        onChange={(e) => aoAlterar(indice, campo, e.target.checked)}
-                      />
-                    ))}
-                  </div>
                 </td>
                 <td className="px-2 py-1.5">
                   <div className="flex items-center justify-center gap-1">

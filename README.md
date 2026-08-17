@@ -125,17 +125,13 @@ quebrar a leitura do arquivo.
 é detectado sozinho, linhas de comentário iniciadas por `/` ou `#` são ignoradas — como nos arquivos
 gerados pelo próprio Corte Certo — e o cabeçalho da planilha também.
 
-### Fita de borda e veio
-
-O layout oficial do Corte Certo não tem campo para fita de borda. A plataforma resolve assim:
-
-- `C1` e `C2` são as bordas cujo comprimento é a **largura** da peça;
-- `L1` e `L2` são as bordas cujo comprimento é a **altura** da peça;
-- a metragem linear é calculada e exibida no resumo;
-- a informação viaja no 7º campo do TXT e na planilha de produção.
+### Veio da peça
 
 O veio (`INDIFERENTE`, `COMPRIMENTO`, `LARGURA`) é usado na validação: uma peça sem veio pode ser
 girada para caber na chapa; com veio definido, não.
+
+A fita de borda (C1/C2/L1/L2) está implementada no código, mas **desligada** em
+`packages/shared/src/recursos.ts` até a central passar a usar o recurso.
 
 ## Rodando na sua máquina
 

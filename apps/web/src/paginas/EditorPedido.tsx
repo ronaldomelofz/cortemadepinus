@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   formatarM2,
-  formatarMl,
   importarPecas,
   pedidoCompletoSchema,
   type PecaImportada,
@@ -168,10 +167,10 @@ export function EditorPedido() {
         altura: String(peca.altura),
         descricao: peca.descricao,
         veio: peca.veio ?? 'INDIFERENTE',
-        fitaC1: peca.fitaC1 ?? false,
-        fitaC2: peca.fitaC2 ?? false,
-        fitaL1: peca.fitaL1 ?? false,
-        fitaL2: peca.fitaL2 ?? false,
+        fitaC1: false,
+        fitaC2: false,
+        fitaL1: false,
+        fitaL2: false,
         observacao: peca.observacao ?? '',
       }));
 
@@ -301,7 +300,7 @@ export function EditorPedido() {
             <span className="rotulo">Observações para a central</span>
             <textarea
               className="campo min-h-20"
-              placeholder="Instruções de corte, fita de borda, retirada ou entrega..."
+              placeholder="Instruções de corte, retirada ou entrega..."
               value={formulario.observacoes}
               onChange={(e) => setFormulario((a) => ({ ...a, observacoes: e.target.value }))}
             />
@@ -361,11 +360,10 @@ export function EditorPedido() {
 
       <section className="cartao p-5">
         <h2 className="mb-4 text-base font-bold text-stone-900">4. Resumo do plano</h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Metrica rotulo="Itens" valor={resumo.totalItens} detalhe="linhas na lista" />
           <Metrica rotulo="Peças" valor={resumo.totalPecas} detalhe="somando quantidades" />
           <Metrica rotulo="Área total" valor={formatarM2(resumo.areaTotalM2)} />
-          <Metrica rotulo="Fita de borda" valor={formatarMl(resumo.fitaMl)} />
         </div>
 
         {resumo.porMaterial.length > 0 && (
@@ -376,7 +374,6 @@ export function EditorPedido() {
                   <th className="px-3 py-2 text-left font-semibold">Material</th>
                   <th className="px-3 py-2 text-right font-semibold">Peças</th>
                   <th className="px-3 py-2 text-right font-semibold">Área</th>
-                  <th className="px-3 py-2 text-right font-semibold">Fita</th>
                   <th className="px-3 py-2 text-right font-semibold">Chapas (estimativa)</th>
                 </tr>
               </thead>
@@ -389,7 +386,6 @@ export function EditorPedido() {
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">{linha.totalPecas}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{formatarM2(linha.areaM2)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{formatarMl(linha.fitaMl)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{linha.chapasEstimadas}</td>
                   </tr>
                 ))}

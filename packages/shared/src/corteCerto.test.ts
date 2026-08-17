@@ -74,7 +74,7 @@ test('TXT usa TAB e acrescenta o campo livre de observação', () => {
   const linhas = exportarTxtCorteCerto(pedido).trim().split('\r\n');
   const campos = linhas[1].split('\t');
   assert.equal(campos.length, 7);
-  assert.equal(campos[6], 'FITA C1+L2 | VEIO LARGURA');
+  assert.equal(campos[6], 'VEIO LARGURA');
 });
 
 test('descrições perdem acento e separadores', () => {

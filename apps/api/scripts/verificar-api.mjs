@@ -166,7 +166,7 @@ async function main() {
   });
   const colunas = String(txt.dados).trim().split('\r\n')[0].split('\t');
   verificar('TXT tem 7 campos', colunas.length === 7, String(colunas.length));
-  verificar('TXT traz fita e veio', colunas[6].includes('FITA') && colunas[6].includes('VEIO'), colunas[6]);
+  verificar('TXT traz veio quando informado', colunas[6].includes('VEIO'), colunas[6]);
 
   console.log('· Envio para a central');
   const enviado = await chamar(`/api/pedidos/${pedido.id}/enviar`, {

@@ -1,5 +1,5 @@
 import type { Prisma } from '@prisma/client';
-import { pedidoCompletoSchema, type PedidoInput, type StatusPedido } from '@cortemadepinus/shared';
+import { pedidoCompletoSchema, RECURSOS, type PedidoInput, type StatusPedido } from '@cortemadepinus/shared';
 import { naoEncontrado, proibido, requisicaoInvalida } from './erros';
 import { inclusaoPedido, mapearPedido } from './mapear';
 import { prisma } from '../prisma';
@@ -120,10 +120,10 @@ function montarPecas(
       altura: peca.altura,
       descricao: peca.descricao,
       veio: peca.veio ?? 'INDIFERENTE',
-      fitaL1: peca.fitaL1 ?? false,
-      fitaL2: peca.fitaL2 ?? false,
-      fitaC1: peca.fitaC1 ?? false,
-      fitaC2: peca.fitaC2 ?? false,
+      fitaL1: RECURSOS.fitaDeBorda ? (peca.fitaL1 ?? false) : false,
+      fitaL2: RECURSOS.fitaDeBorda ? (peca.fitaL2 ?? false) : false,
+      fitaC1: RECURSOS.fitaDeBorda ? (peca.fitaC1 ?? false) : false,
+      fitaC2: RECURSOS.fitaDeBorda ? (peca.fitaC2 ?? false) : false,
       observacao: peca.observacao || null,
       ordem,
     };
