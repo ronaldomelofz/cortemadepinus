@@ -1,25 +1,32 @@
-import { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Marca } from '../componentes/Layout';
 import { Aviso, Botao, Campo } from '../componentes/ui';
 import { ErroApi } from '../lib/api';
 import { useSessao } from '../lib/sessao';
 
+const LOCAL = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+
+const ACESSOS_TESTE = {
+  central: { email: 'admin@madepinus.com.br', senha: 'MudarEsteAcesso1' },
+  cliente: { email: 'cliente@exemplo.com.br', senha: 'cliente12345' },
+} as const;
+
 export function Entrar() {
   const { entrar } = useSessao();
   const navegar = useNavigate();
   const local = useLocation();
+  const [parametros] = useSearchParams();
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
 
-  async function submeter(evento: React.FormEvent) {
-    evento.preventDefault();
+  async function autenticar(emailAcesso: string, senhaAcesso: string) {
     setErro(null);
     setEnviando(true);
     try {
-      const usuario = await entrar(email, senha);
+      const usuario = await entrar(emailAcesso, senhaAcesso);
       const destinoOriginal = (local.state as { de?: string } | null)?.de;
       navegar(destinoOriginal ?? (usuario.role === 'ADMIN' ? '/admin' : '/app'), { replace: true });
     } catch (falha) {
@@ -27,6 +34,19 @@ export function Entrar() {
     } finally {
       setEnviando(false);
     }
+  }
+
+  useEffect(() => {
+    if (!LOCAL) return;
+    const teste = parametros.get('teste');
+    if (teste === 'central') void autenticar(ACESSOS_TESTE.central.email, ACESSOS_TESTE.central.senha);
+    if (teste === 'cliente') void autenticar(ACESSOS_TESTE.cliente.email, ACESSOS_TESTE.cliente.senha);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function submeter(evento: React.FormEvent) {
+    evento.preventDefault();
+    await autenticar(email, senha);
   }
 
   return (
@@ -60,6 +80,30 @@ export function Entrar() {
         <Botao type="submit" carregando={enviando} className="w-full">
           Entrar
         </Botao>
+
+        {LOCAL && (
+          <div className="space-y-2 rounded-xl bg-stone-50 p-3 ring-1 ring-inset ring-stone-200">
+            <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">Acesso de teste (local)</p>
+            <div className="flex flex-wrap gap-2">
+              <Botao
+                type="button"
+                variante="secundario"
+                carregando={enviando}
+                onClick={() => void autenticar(ACESSOS_TESTE.central.email, ACESSOS_TESTE.central.senha)}
+              >
+                Entrar como central
+              </Botao>
+              <Botao
+                type="button"
+                variante="secundario"
+                carregando={enviando}
+                onClick={() => void autenticar(ACESSOS_TESTE.cliente.email, ACESSOS_TESTE.cliente.senha)}
+              >
+                Entrar como cliente
+              </Botao>
+            </div>
+          </div>
+        )}
 
         <p className="text-center text-sm text-stone-500">
           Ainda não tem conta?{' '}

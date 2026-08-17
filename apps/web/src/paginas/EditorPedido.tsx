@@ -10,6 +10,7 @@ import { EditorMateriais } from '../componentes/EditorMateriais';
 import { ImportarPecas } from '../componentes/ImportarPecas';
 import { TabelaPecas } from '../componentes/TabelaPecas';
 import { Aviso, Botao, Carregando, Metrica } from '../componentes/ui';
+import { VisualizacaoPlano } from '../componentes/VisualizacaoPlano';
 import { api, ErroApi } from '../lib/api';
 import {
   formularioInicial,
@@ -395,9 +396,13 @@ export function EditorPedido() {
         )}
 
         <p className="mt-3 text-xs text-stone-500">
-          A estimativa de chapas considera 85% de aproveitamento. O número exato sai da otimização feita no
-          Corte Certo pela nossa central.
+          A estimativa de chapas considera 85% de aproveitamento. O desenho abaixo é uma prévia para
+          conferência; o número exato sai da otimização no Corte Certo pela central.
         </p>
+      </section>
+
+      <section className="cartao p-5">
+        <VisualizacaoPlano materiais={formulario.materiais} pecas={formulario.pecas} />
       </section>
 
       <div className="flex flex-wrap justify-end gap-3 pb-6">

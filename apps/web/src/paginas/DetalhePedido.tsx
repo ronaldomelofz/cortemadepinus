@@ -12,6 +12,7 @@ import {
   type StatusPedido,
 } from '@cortemadepinus/shared';
 import { Aviso, Botao, Carregando, EtiquetaStatus, Metrica } from '../componentes/ui';
+import { VisualizacaoPlano } from '../componentes/VisualizacaoPlano';
 import { api, ErroApi } from '../lib/api';
 import { useSessao } from '../lib/sessao';
 
@@ -241,6 +242,16 @@ export function DetalhePedido() {
             <p className="whitespace-pre-line text-sm text-stone-700">{pedido.observacoes}</p>
           </div>
         )}
+      </section>
+
+      <section className="cartao p-5">
+        <VisualizacaoPlano
+          materiais={pedido.materiais}
+          pecas={pedido.pecas.map((peca) => ({
+            ...peca,
+            materialCodigo: materiaisPorId.get(peca.materialId)?.codigo ?? 0,
+          }))}
+        />
       </section>
 
       <Anexos pedido={pedido} podeEditar={podeEditar || ehAdmin} executar={executar} ocupado={ocupado} />
