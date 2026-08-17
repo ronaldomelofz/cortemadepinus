@@ -1,6 +1,19 @@
 import clsx from 'clsx';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { apiMalConfigurada } from '../lib/api';
 import { useSessao } from '../lib/sessao';
+
+/** Aviso exibido quando o site publicado ainda aponta para a API local. */
+export function AvisoConfiguracao() {
+  if (!apiMalConfigurada) return null;
+  return (
+    <div className="bg-amber-500 px-4 py-2 text-center text-sm font-medium text-amber-950">
+      Este site ainda não está ligado ao servidor da central. Defina a variável{' '}
+      <code className="rounded bg-amber-100/70 px-1 font-mono">VITE_API_URL</code> no Netlify com o endereço
+      público da API e refaça o deploy.
+    </div>
+  );
+}
 
 export function Marca({ claro = false }: { claro?: boolean }) {
   return (
@@ -43,6 +56,7 @@ export function LayoutApp() {
 
   return (
     <div className="min-h-screen bg-stone-50">
+      <AvisoConfiguracao />
       <header className="sticky top-0 z-30 border-b border-stone-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center gap-6 px-4 py-3">
           <Marca />

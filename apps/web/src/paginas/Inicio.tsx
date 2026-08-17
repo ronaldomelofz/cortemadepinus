@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Marca } from '../componentes/Layout';
+import { AvisoConfiguracao, Marca } from '../componentes/Layout';
 import { useSessao } from '../lib/sessao';
 
 const PASSOS = [
@@ -50,6 +50,7 @@ export function Inicio() {
 
   return (
     <div className="min-h-screen bg-stone-50">
+      <AvisoConfiguracao />
       <header className="border-b border-stone-200 bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
           <Marca />

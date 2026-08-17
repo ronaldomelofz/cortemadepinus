@@ -2,6 +2,15 @@ import type { Mensagem, Pedido, ResumoPedido, StatusPedido, Usuario } from '@cor
 
 export const API_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:4000').replace(/\/$/, '');
 
+/**
+ * Detecta o site publicado apontando para a API de desenvolvimento, o que
+ * acontece quando VITE_API_URL nao foi definida no ambiente de build.
+ */
+export const apiMalConfigurada =
+  typeof window !== 'undefined' &&
+  API_URL.includes('localhost') &&
+  !['localhost', '127.0.0.1'].includes(window.location.hostname);
+
 const CHAVE_TOKEN = 'madepinus.token';
 
 export const armazenamento = {
