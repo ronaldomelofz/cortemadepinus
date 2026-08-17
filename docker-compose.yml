@@ -1,0 +1,79 @@
+services:
+  banco:
+    image: postgres:16-alpine
+    container_name: madepinus-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-madepinus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-madepinus}
+      POSTGRES_DB: ${POSTGRES_DB:-cortemadepinus}
+      TZ: America/Sao_Paulo
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - dados-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-madepinus} -d ${POSTGRES_DB:-cortemadepinus}']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: madepinus-api
+    restart: unless-stopped
+    depends_on:
+      banco:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-madepinus}:${POSTGRES_PASSWORD:-madepinus}@banco:5432/${POSTGRES_DB:-cortemadepinus}?schema=public
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no arquivo .env}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://cortemadepinus.netlify.app}
+      UPLOAD_DIR: /dados/uploads
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-20}
+      ADMIN_NOME: ${ADMIN_NOME:-Central de Servicos MadePinus}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@madepinus.com.br}
+      ADMIN_SENHA: ${ADMIN_SENHA:?defina ADMIN_SENHA no arquivo .env}
+    ports:
+      - '${API_PORT:-4000}:4000'
+    volumes:
+      - dados-uploads:/dados/uploads
+
+  # Backup diario do banco em ./backups (mantem os ultimos 14 dias).
+  backup:
+    image: postgres:16-alpine
+    container_name: madepinus-backup
+    restart: unless-stopped
+    depends_on:
+      banco:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-madepinus}
+    volumes:
+      - ./backups:/backups
+    entrypoint: >
+      sh -c 'while true; do
+        pg_dump -h banco -U ${POSTGRES_USER:-madepinus} -d ${POSTGRES_DB:-cortemadepinus}
+          | gzip > /backups/cortemadepinus-$$(date +%%Y%%m%%d-%%H%%M).sql.gz;
+        find /backups -name "*.sql.gz" -mtime +14 -delete;
+        sleep 86400;
+      done'
+
+  # Exposicao publica da API local. Preencha TUNNEL_TOKEN para ativar.
+  tunel:
+    image: cloudflare/cloudflared:latest
+    container_name: madepinus-tunel
+    restart: unless-stopped
+    profiles: ['tunel']
+    depends_on:
+      - api
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+
+volumes:
+  dados-postgres:
+  dados-uploads:

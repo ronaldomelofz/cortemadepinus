@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Testes da regra de negócio (layout Corte Certo)
+        run: npm test --workspace @cortemadepinus/shared
+
+      - name: Build do pacote compartilhado
+        run: npm run build --workspace @cortemadepinus/shared
+
+      - name: Build da API
+        run: npm run build --workspace @cortemadepinus/api
+        env:
+          DATABASE_URL: postgresql://usuario:senha@localhost:5432/banco?schema=public
+
+      - name: Build do site
+        run: npm run build --workspace @cortemadepinus/web

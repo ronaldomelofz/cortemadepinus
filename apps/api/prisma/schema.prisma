@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CLIENTE
+  ADMIN
+}
+
+enum StatusPedido {
+  RASCUNHO
+  ENVIADO
+  EM_ANALISE
+  ORCAMENTO_ENVIADO
+  APROVADO
+  EM_PRODUCAO
+  PRONTO
+  ENTREGUE
+  CANCELADO
+}
+
+enum Veio {
+  INDIFERENTE
+  COMPRIMENTO
+  LARGURA
+}
+
+model Usuario {
+  id         String   @id @default(cuid())
+  nome       String
+  email      String   @unique
+  senhaHash  String
+  telefone   String?
+  empresa    String?
+  documento  String?
+  role       Role     @default(CLIENTE)
+  ativo      Boolean  @default(true)
+  criadoEm   DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  pedidos    Pedido[]           @relation("PedidosDoCliente")
+  mensagens  Mensagem[]
+  historicos HistoricoStatus[]
+
+  @@map("usuarios")
+}
+
+model Pedido {
+  id             String       @id @default(cuid())
+  numero         Int          @unique @default(autoincrement())
+  clienteId      String
+  cliente        Usuario      @relation("PedidosDoCliente", fields: [clienteId], references: [id], onDelete: Cascade)
+  titulo         String
+  ambiente       String?
+  observacoes    String?
+  prazoDesejado  String?
+  status         StatusPedido @default(RASCUNHO)
+  valorOrcamento Decimal?     @db.Decimal(12, 2)
+  criadoEm       DateTime     @default(now())
+  atualizadoEm   DateTime     @updatedAt
+  enviadoEm      DateTime?
+
+  materiais  Material[]
+  pecas      Peca[]
+  anexos     Anexo[]
+  mensagens  Mensagem[]
+  historico  HistoricoStatus[]
+
+  @@index([clienteId, status])
+  @@map("pedidos")
+}
+
+model Material {
+  id                   String  @id @default(cuid())
+  pedidoId             String
+  pedido               Pedido  @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  codigo               Int
+  descricao            String
+  espessura            Float
+  cor                  String?
+  chapaLargura         Float
+  chapaAltura          Float
+  fornecidoPeloCliente Boolean @default(false)
+  quantidadeChapas     Int?
+  ordem                Int     @default(0)
+
+  pecas Peca[]
+
+  @@unique([pedidoId, codigo])
+  @@map("materiais")
+}
+
+model Peca {
+  id         String   @id @default(cuid())
+  pedidoId   String
+  pedido     Pedido   @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  materialId String
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  codigo     Int
+  quantidade Int
+  largura    Float
+  altura     Float
+  descricao  String
+  veio       Veio     @default(INDIFERENTE)
+  fitaL1     Boolean  @default(false)
+  fitaL2     Boolean  @default(false)
+  fitaC1     Boolean  @default(false)
+  fitaC2     Boolean  @default(false)
+  observacao String?
+  ordem      Int      @default(0)
+
+  @@index([pedidoId])
+  @@map("pecas")
+}
+
+model Anexo {
+  id              String   @id @default(cuid())
+  pedidoId        String
+  pedido          Pedido   @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  nomeOriginal    String
+  nomeArmazenado  String
+  mimeType        String
+  tamanho         Int
+  criadoEm        DateTime @default(now())
+
+  @@index([pedidoId])
+  @@map("anexos")
+}
+
+model Mensagem {
+  id       String   @id @default(cuid())
+  pedidoId String
+  pedido   Pedido   @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  autorId  String
+  autor    Usuario  @relation(fields: [autorId], references: [id], onDelete: Cascade)
+  texto    String
+  criadoEm DateTime @default(now())
+
+  @@index([pedidoId, criadoEm])
+  @@map("mensagens")
+}
+
+model HistoricoStatus {
+  id       String       @id @default(cuid())
+  pedidoId String
+  pedido   Pedido       @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  status   StatusPedido
+  nota     String?
+  autorId  String?
+  autor    Usuario?     @relation(fields: [autorId], references: [id], onDelete: SetNull)
+  criadoEm DateTime     @default(now())
+
+  @@index([pedidoId, criadoEm])
+  @@map("historico_status")
+}

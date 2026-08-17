@@ -1,0 +1,45 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-madeira-50: #fdf8f2;
+  --color-madeira-100: #f7e9d8;
+  --color-madeira-200: #eed3b1;
+  --color-madeira-300: #e0b483;
+  --color-madeira-400: #cf9155;
+  --color-madeira-500: #bd7436;
+  --color-madeira-600: #a05c2b;
+  --color-madeira-700: #7c4a21;
+  --color-madeira-800: #5c3719;
+  --color-madeira-900: #3d2411;
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-stone-50 text-stone-800 antialiased;
+}
+
+/* Tabela de pecas: mantem as celulas compactas e legiveis na digitacao rapida. */
+.celula-numerica {
+  @apply w-full rounded-md border border-stone-200 bg-white px-2 py-1.5 text-right text-sm tabular-nums outline-none transition focus:border-madeira-500 focus:ring-2 focus:ring-madeira-200;
+}
+
+.celula-texto {
+  @apply w-full rounded-md border border-stone-200 bg-white px-2 py-1.5 text-sm outline-none transition focus:border-madeira-500 focus:ring-2 focus:ring-madeira-200;
+}
+
+.campo {
+  @apply w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm outline-none transition placeholder:text-stone-400 focus:border-madeira-500 focus:ring-2 focus:ring-madeira-200 disabled:bg-stone-100;
+}
+
+.rotulo {
+  @apply mb-1 block text-xs font-semibold uppercase tracking-wide text-stone-500;
+}
+
+.cartao {
+  @apply rounded-2xl border border-stone-200 bg-white shadow-sm;
+}
