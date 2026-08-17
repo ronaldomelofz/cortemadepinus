@@ -140,10 +140,13 @@ export function VisualizacaoPlano({
 
 function DesenhoChapa({ chapa }: { chapa: ChapaDoPlano }) {
   const maxLargura = 920;
-  const escala = maxLargura / chapa.chapaLargura;
-  const larguraSvg = chapa.chapaLargura * escala;
-  const alturaSvg = chapa.chapaAltura * escala;
+  const margem = Math.max(chapa.chapaLargura, chapa.chapaAltura) * 0.055;
+  const escala = maxLargura / (chapa.chapaLargura + margem * 1.4);
+  const larguraSvg = (chapa.chapaLargura + margem * 1.4) * escala;
+  const alturaSvg = (chapa.chapaAltura + margem * 1.4) * escala;
   const areaChapaM2 = (chapa.chapaLargura * chapa.chapaAltura) / 1_000_000;
+  const fonteChapa = Math.max(28, margem * 0.45);
+  const traco = Math.max(2, chapa.chapaLargura / 500);
 
   return (
     <div className="space-y-2">
@@ -157,17 +160,47 @@ function DesenhoChapa({ chapa }: { chapa: ChapaDoPlano }) {
       </div>
       <div className="overflow-x-auto rounded-xl border border-stone-300 bg-stone-100 p-3">
         <svg
-          viewBox={`0 0 ${chapa.chapaLargura} ${chapa.chapaAltura}`}
+          viewBox={`${-margem} ${-margem * 0.35} ${chapa.chapaLargura + margem * 1.35} ${chapa.chapaAltura + margem * 1.15}`}
           width={larguraSvg}
           height={alturaSvg}
-          className="mx-auto max-w-full bg-[#f3e6d0] shadow-inner"
+          className="mx-auto max-w-full"
           role="img"
           aria-label={`Plano de corte da chapa ${chapa.indice}`}
         >
-          <rect x="0" y="0" width={chapa.chapaLargura} height={chapa.chapaAltura} fill="#ead7b7" />
+          <rect
+            x="0"
+            y="0"
+            width={chapa.chapaLargura}
+            height={chapa.chapaAltura}
+            fill="#ead7b7"
+            stroke="#5c3719"
+            strokeWidth={traco * 1.4}
+          />
+
+          <CotaHorizontal
+            x={0}
+            y={chapa.chapaAltura}
+            comprimento={chapa.chapaLargura}
+            texto={`${chapa.chapaLargura}`}
+            fonte={fonteChapa}
+            traco={traco}
+            fora
+          />
+          <CotaVertical
+            x={0}
+            y={0}
+            comprimento={chapa.chapaAltura}
+            texto={`${chapa.chapaAltura}`}
+            fonte={fonteChapa}
+            traco={traco}
+            fora
+          />
+
           {chapa.pecas.map((peca, indice) => {
             const cor = CORES[peca.codigo % CORES.length];
-            const fonte = Math.max(18, Math.min(peca.largura, peca.altura) * 0.12);
+            const menorLado = Math.min(peca.largura, peca.altura);
+            const fonteNome = Math.max(16, Math.min(menorLado * 0.16, peca.largura * 0.12));
+            const fonteCota = Math.max(14, Math.min(menorLado * 0.14, 48));
             return (
               <g key={`${peca.codigo}-${indice}-${peca.x}-${peca.y}`}>
                 <rect
@@ -177,32 +210,124 @@ function DesenhoChapa({ chapa }: { chapa: ChapaDoPlano }) {
                   height={peca.altura}
                   fill={cor}
                   stroke="#5c3719"
-                  strokeWidth={Math.max(2, chapa.chapaLargura / 400)}
+                  strokeWidth={traco}
                 />
                 <text
                   x={peca.x + peca.largura / 2}
-                  y={peca.y + peca.altura / 2 - fonte * 0.4}
+                  y={peca.y + peca.altura / 2}
                   textAnchor="middle"
+                  dominantBaseline="middle"
                   fill="#3d2411"
-                  fontSize={fonte}
+                  fontSize={fonteNome}
                   fontWeight={700}
                 >
                   {peca.codigo} · {peca.descricao}
+                  {peca.girada ? ' ↻' : ''}
                 </text>
-                <text
-                  x={peca.x + peca.largura / 2}
-                  y={peca.y + peca.altura / 2 + fonte * 0.8}
-                  textAnchor="middle"
-                  fill="#5c3719"
-                  fontSize={fonte * 0.85}
-                >
-                  {peca.largura}×{peca.altura} mm{peca.girada ? ' (girada)' : ''}
-                </text>
+                <CotaHorizontal
+                  x={peca.x}
+                  y={peca.y + peca.altura}
+                  comprimento={peca.largura}
+                  texto={`${peca.largura}`}
+                  fonte={fonteCota}
+                  traco={traco}
+                />
+                <CotaVertical
+                  x={peca.x}
+                  y={peca.y}
+                  comprimento={peca.altura}
+                  texto={`${peca.altura}`}
+                  fonte={fonteCota}
+                  traco={traco}
+                />
               </g>
             );
           })}
         </svg>
       </div>
     </div>
+  );
+}
+
+/** Medida ao longo da aresta horizontal (largura), junto da linha de baixo. */
+function CotaHorizontal({
+  x,
+  y,
+  comprimento,
+  texto,
+  fonte,
+  traco,
+  fora = false,
+}: {
+  x: number;
+  y: number;
+  comprimento: number;
+  texto: string;
+  fonte: number;
+  traco: number;
+  fora?: boolean;
+}) {
+  const deslocamento = fora ? fonte * 0.85 : -fonte * 0.35;
+  const yTexto = y + deslocamento;
+  const yTique = fora ? y + fonte * 0.25 : y - fonte * 0.08;
+  return (
+    <g fill="#3d2411" stroke="#5c3719">
+      <line x1={x} y1={y} x2={x} y2={yTique} strokeWidth={traco} />
+      <line x1={x + comprimento} y1={y} x2={x + comprimento} y2={yTique} strokeWidth={traco} />
+      <text
+        x={x + comprimento / 2}
+        y={yTexto}
+        textAnchor="middle"
+        dominantBaseline={fora ? 'hanging' : 'auto'}
+        fill="#3d2411"
+        stroke="none"
+        fontSize={fonte}
+        fontWeight={700}
+      >
+        {texto}
+      </text>
+    </g>
+  );
+}
+
+/** Medida ao longo da aresta vertical (altura), junto da linha da esquerda. */
+function CotaVertical({
+  x,
+  y,
+  comprimento,
+  texto,
+  fonte,
+  traco,
+  fora = false,
+}: {
+  x: number;
+  y: number;
+  comprimento: number;
+  texto: string;
+  fonte: number;
+  traco: number;
+  fora?: boolean;
+}) {
+  const cx = fora ? x - fonte * 0.7 : x + fonte * 0.55;
+  const cy = y + comprimento / 2;
+  const xTique = fora ? x - fonte * 0.25 : x + fonte * 0.15;
+  return (
+    <g fill="#3d2411" stroke="#5c3719">
+      <line x1={x} y1={y} x2={xTique} y2={y} strokeWidth={traco} />
+      <line x1={x} y1={y + comprimento} x2={xTique} y2={y + comprimento} strokeWidth={traco} />
+      <text
+        x={cx}
+        y={cy}
+        textAnchor="middle"
+        dominantBaseline="middle"
+        fill="#3d2411"
+        stroke="none"
+        fontSize={fonte}
+        fontWeight={700}
+        transform={`rotate(-90 ${cx} ${cy})`}
+      >
+        {texto}
+      </text>
+    </g>
   );
 }
