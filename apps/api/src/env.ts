@@ -9,6 +9,10 @@ const raizApi = path.resolve(__dirname, '..');
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
+  /** 0.0.0.0 libera acesso pela rede local; 127.0.0.1 restringe a este computador. */
+  HOST: z.string().default('0.0.0.0'),
+  /** Pasta com o site compilado (index.html). Vazio = só API. */
+  PUBLICO_DIR: z.string().optional().or(z.literal('')),
 
   /**
    * SQLite nao exige instalacao nem senha e atende bem uma central de servicos;
@@ -55,12 +59,19 @@ function resolverUrlDoBanco(): string {
 export const env = {
   ...dados,
   DATABASE_URL: resolverUrlDoBanco(),
+  PUBLICO_DIR: resolverPublico(),
   corsOrigins: dados.CORS_ORIGINS.split(',')
     .map((o) => o.trim())
     .filter(Boolean),
   isProd: dados.NODE_ENV === 'production',
   ehPostgres: dados.DB_PROVIDER === 'postgresql',
 };
+
+function resolverPublico(): string | null {
+  const informado = dados.PUBLICO_DIR?.trim();
+  if (!informado) return null;
+  return path.isAbsolute(informado) ? informado : path.resolve(raizApi, informado);
+}
 
 // O Prisma Client le DATABASE_URL do ambiente; garante o valor ja resolvido.
 process.env.DATABASE_URL = env.DATABASE_URL;

@@ -43,3 +43,34 @@ body {
 .cartao {
   @apply rounded-2xl border border-stone-200 bg-white shadow-sm;
 }
+
+.grade-etiquetas {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.etiqueta-peca {
+  break-inside: avoid;
+  page-break-inside: avoid;
+  border: 1px solid #a8a29e;
+  border-radius: 10px;
+  padding: 12px 14px;
+  min-height: 42mm;
+  background: #fff;
+}
+
+@media print {
+  .nao-imprimir {
+    display: none !important;
+  }
+
+  .quebra-pagina {
+    break-after: page;
+    page-break-after: always;
+  }
+
+  body {
+    background: #fff !important;
+  }
+}

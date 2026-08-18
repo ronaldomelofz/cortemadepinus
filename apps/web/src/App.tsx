@@ -10,7 +10,9 @@ import { Inicio } from './paginas/Inicio';
 import { MeusPedidos } from './paginas/MeusPedidos';
 import { Perfil } from './paginas/Perfil';
 import { ClientesAdmin } from './paginas/admin/ClientesAdmin';
+import { CadastrosAdmin } from './paginas/admin/CadastrosAdmin';
 import { PainelAdmin } from './paginas/admin/PainelAdmin';
+import { PaginaImpressao } from './paginas/admin/PaginaImpressao';
 import { PedidosAdmin } from './paginas/admin/PedidosAdmin';
 import { useSessao } from './lib/sessao';
 
@@ -61,7 +63,17 @@ export function App() {
         <Route path="pedidos" element={<PedidosAdmin />} />
         <Route path="pedidos/:id" element={<DetalhePedido />} />
         <Route path="clientes" element={<ClientesAdmin />} />
+        <Route path="cadastros" element={<CadastrosAdmin />} />
       </Route>
+
+      <Route
+        path="/admin/pedidos/:id/imprimir/:tipo"
+        element={
+          <Protegido somenteAdmin>
+            <PaginaImpressao />
+          </Protegido>
+        }
+      />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

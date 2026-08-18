@@ -158,3 +158,30 @@ model HistoricoStatus {
   @@index([autorId])
   @@map("historico_status")
 }
+
+model ProdutoMdf {
+  id           String   @id @default(cuid())
+  codigo       Int      @unique
+  nome         String
+  cor          String
+  espessura    Float
+  /// Lado menor da chapa (ex.: 1840 mm).
+  largura      Float
+  /// Lado maior da chapa (ex.: 2750 mm).
+  comprimento  Float
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@map("produtos_mdf")
+}
+
+/// Uma unica linha (id = "padrao") com os parametros globais de corte.
+model Configuracao {
+  id          String   @id
+  serraMm     Float
+  valorCorte  Float
+  atualizadoEm DateTime @updatedAt
+
+  @@map("configuracoes")
+}

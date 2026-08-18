@@ -1,11 +1,15 @@
 import type { Prisma } from '@prisma/client';
-import { pedidoCompletoSchema, RECURSOS, type PedidoInput, type StatusPedido } from '@cortemadepinus/shared';
+import {
+  pedidoCompletoSchema,
+  pedidoEditavelPeloCliente,
+  pedidoReabivelPeloCliente,
+  RECURSOS,
+  type PedidoInput,
+  type StatusPedido,
+} from '@cortemadepinus/shared';
 import { naoEncontrado, proibido, requisicaoInvalida } from './erros';
 import { inclusaoPedido, mapearPedido } from './mapear';
 import { prisma } from '../prisma';
-
-/** Status em que o cliente ainda pode alterar as pecas do pedido. */
-const EDITAVEL_PELO_CLIENTE: StatusPedido[] = ['RASCUNHO'];
 
 /** Transicoes permitidas para a central de servicos. */
 export const TRANSICOES: Record<StatusPedido, StatusPedido[]> = {
@@ -174,11 +178,40 @@ export async function buscarPedidoAutorizado(
 // O status e gravado como texto para o schema servir a SQLite e PostgreSQL,
 // entao os parametros chegam como string e sao estreitados aqui.
 export function garantirEdicaoDoCliente(status: string): void {
-  if (!EDITAVEL_PELO_CLIENTE.includes(status as StatusPedido)) {
+  if (!pedidoEditavelPeloCliente(status as StatusPedido)) {
     throw requisicaoInvalida(
-      'O pedido já foi enviado à central e não pode mais ser alterado. Envie uma mensagem solicitando ajuste.',
+      'O pedido já foi enviado à central e não pode mais ser alterado. Reabra o rascunho se a análise ainda não começou, ou envie uma mensagem solicitando ajuste.',
     );
   }
+}
+
+/** Volta um pedido Enviado para rascunho, enquanto a central não iniciou a análise. */
+export async function reabrirPedido(pedidoId: string, autorId: string) {
+  const registro = await prisma.pedido.findUnique({ where: { id: pedidoId } });
+  if (!registro) throw naoEncontrado('Pedido');
+  if (!pedidoReabivelPeloCliente(registro.status as StatusPedido)) {
+    throw requisicaoInvalida(
+      'Só é possível reabrir o plano enquanto o status for Enviado. Depois que a central inicia a análise, fale pela conversa do pedido.',
+    );
+  }
+
+  const atualizado = await prisma.pedido.update({
+    where: { id: pedidoId },
+    data: {
+      status: 'RASCUNHO',
+      enviadoEm: null,
+      historico: {
+        create: {
+          status: 'RASCUNHO',
+          nota: 'Cliente reabriu o rascunho para ajustar o plano de corte',
+          autorId,
+        },
+      },
+    },
+    include: inclusaoPedido,
+  });
+
+  return mapearPedido(atualizado);
 }
 
 export function garantirTransicao(atual: string, novo: StatusPedido): void {

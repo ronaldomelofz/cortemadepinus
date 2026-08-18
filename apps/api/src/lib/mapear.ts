@@ -1,19 +1,23 @@
 import type {
   Anexo as AnexoPrisma,
+  Configuracao as ConfiguracaoPrisma,
   HistoricoStatus as HistoricoPrisma,
   Material as MaterialPrisma,
   Mensagem as MensagemPrisma,
   Peca as PecaPrisma,
   Pedido as PedidoPrisma,
+  ProdutoMdf as ProdutoMdfPrisma,
   Usuario as UsuarioPrisma,
 } from '@prisma/client';
 import type {
   Anexo,
+  ConfiguracaoCorte,
   HistoricoStatus,
   Material,
   Mensagem,
   Peca,
   Pedido,
+  ProdutoMdf,
   Role,
   StatusPedido,
   Usuario,
@@ -40,6 +44,28 @@ export function mapearUsuario(usuario: UsuarioPrisma): Usuario {
     role: usuario.role as Role,
     ativo: usuario.ativo,
     criadoEm: usuario.criadoEm.toISOString(),
+  };
+}
+
+export function mapearProduto(produto: ProdutoMdfPrisma): ProdutoMdf {
+  return {
+    id: produto.id,
+    codigo: produto.codigo,
+    nome: produto.nome,
+    cor: produto.cor,
+    espessura: produto.espessura,
+    largura: produto.largura,
+    comprimento: produto.comprimento,
+    ativo: produto.ativo,
+    criadoEm: produto.criadoEm.toISOString(),
+    atualizadoEm: produto.atualizadoEm.toISOString(),
+  };
+}
+
+export function mapearConfiguracao(config: ConfiguracaoPrisma): ConfiguracaoCorte {
+  return {
+    serraMm: config.serraMm,
+    valorCorte: config.valorCorte,
   };
 }
 

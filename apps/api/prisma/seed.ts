@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
+import { SERRA_PADRAO_MM, VALOR_CORTE_PADRAO } from '@cortemadepinus/shared';
 import { env } from '../src/env';
 
 const prisma = new PrismaClient({ datasources: { db: { url: env.DATABASE_URL } } });
@@ -16,6 +17,45 @@ async function main() {
     },
   });
   console.log(`[seed] Administrador pronto: ${admin.email}`);
+
+  await prisma.configuracao.upsert({
+    where: { id: 'padrao' },
+    create: { id: 'padrao', serraMm: SERRA_PADRAO_MM, valorCorte: VALOR_CORTE_PADRAO },
+    update: {},
+  });
+
+  const totalProdutos = await prisma.produtoMdf.count();
+  if (totalProdutos === 0) {
+    await prisma.produtoMdf.createMany({
+      data: [
+        {
+          codigo: 99000,
+          nome: 'MDF Branco TX 15 mm',
+          cor: 'Branco TX',
+          espessura: 15,
+          largura: 1840,
+          comprimento: 2750,
+        },
+        {
+          codigo: 99001,
+          nome: 'MDF Branco TX 18 mm',
+          cor: 'Branco TX',
+          espessura: 18,
+          largura: 1840,
+          comprimento: 2750,
+        },
+        {
+          codigo: 99002,
+          nome: 'MDF Amadeirado 15 mm',
+          cor: 'Carvalho Hanover',
+          espessura: 15,
+          largura: 1840,
+          comprimento: 2750,
+        },
+      ],
+    });
+    console.log('[seed] Produtos MDF iniciais cadastrados.');
+  }
 
   if (env.isProd) {
     console.log('[seed] Ambiente de produção: dados de exemplo não foram criados.');

@@ -1,6 +1,21 @@
-import type { Mensagem, Pedido, ResumoPedido, StatusPedido, Usuario } from '@cortemadepinus/shared';
+import type {
+  ConfiguracaoCorte,
+  Mensagem,
+  Pedido,
+  ProdutoMdf,
+  ResumoPedido,
+  StatusPedido,
+  Usuario,
+} from '@cortemadepinus/shared';
 
-export const API_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:4000').replace(/\/$/, '');
+const bruto = import.meta.env.VITE_API_URL;
+export const API_URL = (
+  typeof bruto === 'string' && bruto.trim() !== ''
+    ? bruto
+    : import.meta.env.DEV
+      ? ''
+      : 'http://localhost:4000'
+).replace(/\/$/, '');
 
 /**
  * Detecta o site publicado apontando para a API de desenvolvimento, o que
@@ -9,6 +24,7 @@ export const API_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:4000')
 export const apiMalConfigurada =
   typeof window !== 'undefined' &&
   API_URL.includes('localhost') &&
+  API_URL.length > 0 &&
   !['localhost', '127.0.0.1'].includes(window.location.hostname);
 
 const CHAVE_TOKEN = 'madepinus.token';
@@ -45,6 +61,7 @@ export async function requisitar<T>(caminho: string, opcoes: Opcoes = {}): Promi
     headers: {
       ...(ehFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(token && !semAutenticacao ? { Authorization: `Bearer ${token}` } : {}),
+      ...(API_URL.includes('ngrok') ? { 'ngrok-skip-browser-warning': 'true' } : {}),
       ...headers,
     },
     body: ehFormData ? body : body !== undefined ? JSON.stringify(body) : undefined,
@@ -126,6 +143,11 @@ export const api = {
       method: 'POST',
     }),
 
+  reabrirPedido: (id: string) =>
+    requisitar<{ pedido: Pedido; resumo: ResumoPedido }>(`/api/pedidos/${id}/reabrir`, {
+      method: 'POST',
+    }),
+
   enviarMensagem: (id: string, texto: string) =>
     requisitar<{ mensagem: Mensagem }>(`/api/pedidos/${id}/mensagens`, {
       method: 'POST',
@@ -177,5 +199,46 @@ export const api = {
     requisitar<{ usuario: Usuario }>(`/api/admin/clientes/${id}`, {
       method: 'PATCH',
       body: { ativo },
+    }),
+
+  atualizarCliente: (id: string, body: unknown) =>
+    requisitar<{ usuario: Usuario }>(`/api/admin/clientes/${id}`, {
+      method: 'PUT',
+      body,
+    }),
+
+  catalogoProdutos: () =>
+    requisitar<{ itens: ProdutoMdf[] }>('/api/catalogo/produtos'),
+
+  catalogoConfiguracao: () =>
+    requisitar<{ configuracao: ConfiguracaoCorte }>('/api/catalogo/configuracao'),
+
+  listarProdutosAdmin: (busca?: string) =>
+    requisitar<{ itens: ProdutoMdf[] }>(
+      `/api/admin/produtos${busca ? `?busca=${encodeURIComponent(busca)}` : ''}`,
+    ),
+
+  criarProduto: (body: unknown) =>
+    requisitar<{ produto: ProdutoMdf }>('/api/admin/produtos', { method: 'POST', body }),
+
+  atualizarProduto: (id: string, body: unknown) =>
+    requisitar<{ produto: ProdutoMdf }>(`/api/admin/produtos/${id}`, { method: 'PUT', body }),
+
+  alterarSituacaoProduto: (id: string, ativo: boolean) =>
+    requisitar<{ produto: ProdutoMdf }>(`/api/admin/produtos/${id}`, {
+      method: 'PATCH',
+      body: { ativo },
+    }),
+
+  excluirProduto: (id: string) =>
+    requisitar<void>(`/api/admin/produtos/${id}`, { method: 'DELETE' }),
+
+  obterConfiguracaoAdmin: () =>
+    requisitar<{ configuracao: ConfiguracaoCorte }>('/api/admin/configuracao'),
+
+  salvarConfiguracao: (body: { serraMm: number; valorCorte: number }) =>
+    requisitar<{ configuracao: ConfiguracaoCorte }>('/api/admin/configuracao', {
+      method: 'PUT',
+      body,
     }),
 };

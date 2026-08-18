@@ -1,8 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   formatarM2,
+  formatarMoeda,
   otimizarPlanos,
+  SERRA_PADRAO_MM,
   type ChapaDoPlano,
+  type FaseCorte,
   type ItemParaOtimizar,
   type ResultadoOtimizacao,
 } from '@cortemadepinus/shared';
@@ -32,7 +35,11 @@ function numero(valor: number | string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function montarResultado(materiais: MaterialVisual[], pecas: PecaVisual[]): ResultadoOtimizacao {
+export function montarResultado(
+  materiais: MaterialVisual[],
+  pecas: PecaVisual[],
+  serraMm: number,
+): ResultadoOtimizacao {
   const chapas = materiais
     .map((m) => ({
       codigo: numero(m.codigo),
@@ -61,19 +68,59 @@ function montarResultado(materiais: MaterialVisual[], pecas: PecaVisual[]): Resu
     porMaterial.set(material, lista);
   });
 
-  return otimizarPlanos(chapas, porMaterial);
+  return otimizarPlanos(chapas, porMaterial, { serraMm, apararBordas: true });
 }
+
+const FASE_CORTE_LABEL: Record<FaseCorte, string> = {
+  APARAR: 'Aparar',
+  LONGO: 'Longo',
+  CURTO: 'Curto',
+};
 
 export function VisualizacaoPlano({
   materiais,
   pecas,
+  serraMm = SERRA_PADRAO_MM,
+  valorCorte = 0,
+  acoes,
 }: {
   materiais: MaterialVisual[];
   pecas: PecaVisual[];
+  serraMm?: number;
+  valorCorte?: number;
+  acoes?: ReactNode;
 }) {
-  const resultado = useMemo(() => montarResultado(materiais, pecas), [materiais, pecas]);
+  const resultado = useMemo(
+    () => montarResultado(materiais, pecas, serraMm),
+    [materiais, pecas, serraMm],
+  );
+  const grupos = useMemo(() => {
+    const mapa = new Map<
+      number,
+      { codigo: number; descricao: string; indices: number[]; cortes: number; aproveitamento: number }
+    >();
+    resultado.chapas.forEach((c, indice) => {
+      const atual = mapa.get(c.materialCodigo) ?? {
+        codigo: c.materialCodigo,
+        descricao: c.materialDescricao,
+        indices: [],
+        cortes: 0,
+        aproveitamento: 0,
+      };
+      atual.indices.push(indice);
+      atual.cortes += c.cortes.length;
+      atual.aproveitamento += c.aproveitamento;
+      mapa.set(c.materialCodigo, atual);
+    });
+    return [...mapa.values()].map((grupo) => ({
+      ...grupo,
+      aproveitamento:
+        grupo.indices.length > 0 ? Math.round((grupo.aproveitamento / grupo.indices.length) * 10) / 10 : 0,
+    }));
+  }, [resultado.chapas]);
   const [folha, setFolha] = useState(0);
   const chapa = resultado.chapas[Math.min(folha, Math.max(0, resultado.chapas.length - 1))];
+  const custoCortes = resultado.totalCortes * valorCorte;
 
   if (resultado.chapas.length === 0 && resultado.naoEncaixadas.length === 0) {
     return (
@@ -89,15 +136,22 @@ export function VisualizacaoPlano({
         <div>
           <h3 className="text-base font-bold text-stone-900">Pré-visualização do plano de corte</h3>
           <p className="text-sm text-stone-500">
-            Disposição preliminar nas chapas (corte tipo guilhotina, serra 4,4 mm). Confira as medidas
-            antes de enviar. A central refaz a otimização no Corte Certo.
+            Disposição otimizada nas chapas (faixas para seccionadora, serra{' '}
+            {serraMm.toLocaleString('pt-BR')} mm). As quatro bordas são aparadas com essa espessura antes
+            das peças. A chapa entra no sentido do comprimento ou da largura: primeiro o aparo e os cortes
+            longos, depois os curtos de cada faixa.
           </p>
         </div>
-        {resultado.chapas.length > 0 && (
-          <p className="text-sm font-semibold text-stone-700">
-            {resultado.totalChapas} chapa(s) · aproveitamento médio {resultado.aproveitamentoMedio.toLocaleString('pt-BR')}%
-          </p>
-        )}
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {acoes}
+          {resultado.chapas.length > 0 && (
+            <p className="text-sm font-semibold text-stone-700">
+              {resultado.totalChapas} chapa(s) · {resultado.totalCortes} corte(s)
+              {valorCorte > 0 ? ` · ${formatarMoeda(custoCortes)}` : ''} · aproveitamento médio{' '}
+              {resultado.aproveitamentoMedio.toLocaleString('pt-BR')}%
+            </p>
+          )}
+        </div>
       </div>
 
       {resultado.naoEncaixadas.length > 0 && (
@@ -115,31 +169,56 @@ export function VisualizacaoPlano({
 
       {resultado.chapas.length > 0 && (
         <>
-          <div className="flex flex-wrap gap-2">
-            {resultado.chapas.map((c, indice) => (
-              <button
-                key={`${c.materialCodigo}-${c.indice}`}
-                type="button"
-                onClick={() => setFolha(indice)}
-                className={
-                  indice === folha
-                    ? 'rounded-lg bg-madeira-700 px-3 py-1.5 text-xs font-semibold text-white'
-                    : 'rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-stone-600 ring-1 ring-inset ring-stone-300 hover:bg-stone-50'
-                }
-              >
-                {c.materialDescricao} · chapa {c.indice}
-              </button>
+          <div className="space-y-4">
+            {grupos.map((grupo) => (
+              <div key={grupo.codigo} className="space-y-2">
+                <p className="text-sm font-semibold text-stone-800">
+                  {grupo.descricao}
+                  <span className="ml-2 text-xs font-normal text-stone-500">
+                    {grupo.indices.length} chapa(s) · {grupo.cortes} corte(s) · aproveitamento{' '}
+                    {grupo.aproveitamento.toLocaleString('pt-BR')}%
+                  </span>
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {grupo.indices.map((indice) => (
+                    <button
+                      key={`${grupo.codigo}-${resultado.chapas[indice].indice}`}
+                      type="button"
+                      onClick={() => setFolha(indice)}
+                      className={
+                        indice === folha
+                          ? 'rounded-lg bg-madeira-700 px-3 py-1.5 text-xs font-semibold text-white'
+                          : 'rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-stone-600 ring-1 ring-inset ring-stone-300 hover:bg-stone-50'
+                      }
+                    >
+                      Chapa {resultado.chapas[indice].indice}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
-          {chapa && <DesenhoChapa chapa={chapa} />}
+          {chapa && <DesenhoChapa chapa={chapa} valorCorte={valorCorte} />}
         </>
       )}
     </div>
   );
 }
 
-function DesenhoChapa({ chapa }: { chapa: ChapaDoPlano }) {
-  const maxLargura = 920;
+function comprimentoCorte(x1: number, y1: number, x2: number, y2: number): number {
+  return Math.round(Math.hypot(x2 - x1, y2 - y1));
+}
+
+export function DesenhoChapa({
+  chapa,
+  valorCorte,
+  larguraMaxima = 920,
+}: {
+  chapa: ChapaDoPlano;
+  valorCorte: number;
+  larguraMaxima?: number;
+}) {
+  const maxLargura = larguraMaxima;
   const margem = Math.max(chapa.chapaLargura, chapa.chapaAltura) * 0.055;
   const escala = maxLargura / (chapa.chapaLargura + margem * 1.4);
   const larguraSvg = (chapa.chapaLargura + margem * 1.4) * escala;
@@ -147,9 +226,10 @@ function DesenhoChapa({ chapa }: { chapa: ChapaDoPlano }) {
   const areaChapaM2 = (chapa.chapaLargura * chapa.chapaAltura) / 1_000_000;
   const fonteChapa = Math.max(28, margem * 0.45);
   const traco = Math.max(2, chapa.chapaLargura / 500);
+  const raioOrdem = Math.max(22, Math.min(chapa.chapaLargura, chapa.chapaAltura) * 0.018);
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <div className="flex flex-wrap gap-4 text-xs text-stone-600">
         <span>
           Chapa {chapa.chapaLargura} × {chapa.chapaAltura} mm
@@ -157,6 +237,10 @@ function DesenhoChapa({ chapa }: { chapa: ChapaDoPlano }) {
         <span>{chapa.pecas.length} peça(s)</span>
         <span>usada {formatarM2(chapa.areaUsadaMm2 / 1_000_000)} de {formatarM2(areaChapaM2)}</span>
         <span className="font-semibold text-madeira-800">{chapa.aproveitamento}% de aproveitamento</span>
+        <span>
+          Entra na seccionadora no sentido {chapa.sentidoEntradaMm.toLocaleString('pt-BR')} mm
+          {chapa.sentidoEntrada === 'COMPRIMENTO' ? ' (comprimento)' : ' (largura)'}
+        </span>
       </div>
       <div className="overflow-x-auto rounded-xl border border-stone-300 bg-stone-100 p-3">
         <svg
@@ -199,8 +283,8 @@ function DesenhoChapa({ chapa }: { chapa: ChapaDoPlano }) {
           {chapa.pecas.map((peca, indice) => {
             const cor = CORES[peca.codigo % CORES.length];
             const menorLado = Math.min(peca.largura, peca.altura);
-            const fonteNome = Math.max(16, Math.min(menorLado * 0.16, peca.largura * 0.12));
-            const fonteCota = Math.max(14, Math.min(menorLado * 0.14, 48));
+            const fonteNome = Math.max(14, Math.min(menorLado * 0.13, peca.largura * 0.1, 36));
+            const fonteCota = Math.max(14, Math.min(menorLado * 0.1, 32));
             return (
               <g key={`${peca.codigo}-${indice}-${peca.x}-${peca.y}`}>
                 <rect
@@ -212,18 +296,7 @@ function DesenhoChapa({ chapa }: { chapa: ChapaDoPlano }) {
                   stroke="#5c3719"
                   strokeWidth={traco}
                 />
-                <text
-                  x={peca.x + peca.largura / 2}
-                  y={peca.y + peca.altura / 2}
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  fill="#3d2411"
-                  fontSize={fonteNome}
-                  fontWeight={700}
-                >
-                  {peca.codigo} · {peca.descricao}
-                  {peca.girada ? ' ↻' : ''}
-                </text>
+                <NomePeca peca={peca} fonteNome={fonteNome} padEsq={fonteCota * 1.35} padBaixo={fonteCota * 1.15} />
                 <CotaHorizontal
                   x={peca.x}
                   y={peca.y + peca.altura}
@@ -243,9 +316,146 @@ function DesenhoChapa({ chapa }: { chapa: ChapaDoPlano }) {
               </g>
             );
           })}
+
+          {chapa.cortes.map((corte) => {
+            const dx = corte.x2 - corte.x1;
+            const dy = corte.y2 - corte.y1;
+            const t = corte.fase === 'LONGO' || corte.fase === 'APARAR' ? 0.06 : 0.18;
+            const mx = corte.x1 + dx * t;
+            const my = corte.y1 + dy * t;
+            const fonteNum = raioOrdem * 0.95;
+            const longo = corte.fase === 'LONGO' || corte.fase === 'APARAR';
+            const corLinha = corte.fase === 'APARAR' ? '#6b21a8' : longo ? '#9f1239' : '#c2410c';
+            return (
+              <g key={`corte-${corte.ordem}`}>
+                <line
+                  x1={corte.x1}
+                  y1={corte.y1}
+                  x2={corte.x2}
+                  y2={corte.y2}
+                  stroke={corLinha}
+                  strokeWidth={traco * (longo ? 1.45 : 1.05)}
+                  strokeDasharray={longo ? `${traco * 14} ${traco * 6}` : `${traco * 7} ${traco * 6}`}
+                  strokeLinecap="round"
+                />
+                <circle cx={mx} cy={my} r={raioOrdem} fill={corLinha} stroke="#fff7ed" strokeWidth={traco} />
+                <text
+                  x={mx}
+                  y={my}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fill="#fff7ed"
+                  fontSize={fonteNum}
+                  fontWeight={800}
+                >
+                  {corte.ordem}
+                </text>
+              </g>
+            );
+          })}
         </svg>
       </div>
+      {chapa.cortes.length > 0 && (
+        <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-950 ring-1 ring-inset ring-rose-200">
+          <p className="font-semibold text-rose-900">
+            Ordem dos cortes na seccionadora
+            <span className="ml-2 font-normal text-rose-700">
+              — entra em {chapa.sentidoEntradaMm.toLocaleString('pt-BR')} mm; aparar, longos e depois curtos
+              {valorCorte > 0
+                ? ` · ${chapa.cortes.length} corte(s) nesta chapa (${formatarMoeda(chapa.cortes.length * valorCorte)})`
+                : ''}
+            </span>
+          </p>
+          <ol className="mt-2 grid list-decimal gap-1 pl-5 sm:grid-cols-2">
+            {chapa.cortes.map((corte) => (
+              <li key={corte.ordem}>
+                {FASE_CORTE_LABEL[corte.fase]}{' '}
+                {corte.direcao === 'HORIZONTAL' ? 'horizontal' : 'vertical'} ·{' '}
+                {comprimentoCorte(corte.x1, corte.y1, corte.x2, corte.y2).toLocaleString('pt-BR')} mm
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
     </div>
+  );
+}
+
+function quebrarTexto(texto: string, larguraMax: number, fonte: number): string[] {
+  const maxChars = Math.max(4, Math.floor(larguraMax / (fonte * 0.58)));
+  const palavras = texto.split(/\s+/).filter(Boolean);
+  const linhas: string[] = [];
+  let atual = '';
+  for (const palavra of palavras) {
+    const tentativa = atual ? `${atual} ${palavra}` : palavra;
+    if (tentativa.length <= maxChars) {
+      atual = tentativa;
+      continue;
+    }
+    if (atual) linhas.push(atual);
+    if (palavra.length > maxChars) {
+      for (let i = 0; i < palavra.length; i += maxChars) linhas.push(palavra.slice(i, i + maxChars));
+      atual = '';
+    } else {
+      atual = palavra;
+    }
+  }
+  if (atual) linhas.push(atual);
+  return linhas.slice(0, 4);
+}
+
+function NomePeca({
+  peca,
+  fonteNome,
+  padEsq,
+  padBaixo,
+}: {
+  peca: ChapaDoPlano['pecas'][number];
+  fonteNome: number;
+  padEsq: number;
+  padBaixo: number;
+}) {
+  const pad = fonteNome * 0.25;
+  const innerW = peca.largura - padEsq - pad;
+  const innerH = peca.altura - padBaixo - pad;
+  if (innerW < fonteNome * 1.6 || innerH < fonteNome * 1.1) return null;
+
+  const vertical = peca.altura > peca.largura * 1.35 && innerW < fonteNome * 7;
+  const larguraTexto = vertical ? innerH : innerW;
+  const rotulo = `${peca.codigo} · ${peca.descricao}${peca.girada ? ' ↻' : ''}`;
+  const linhas = quebrarTexto(rotulo, larguraTexto, fonteNome);
+  const lineH = fonteNome * 1.18;
+  const blocoH = linhas.length * lineH;
+  const cx = peca.x + padEsq + innerW / 2;
+  const cy = peca.y + pad + innerH / 2;
+  const fundoW = vertical ? blocoH + fonteNome * 0.35 : Math.min(innerW, Math.max(...linhas.map((l) => l.length)) * fonteNome * 0.58 + fonteNome);
+  const fundoH = vertical ? Math.min(innerW, fonteNome * 1.35) : Math.min(innerH, blocoH + fonteNome * 0.3);
+
+  return (
+    <g transform={vertical ? `rotate(-90 ${cx} ${cy})` : undefined}>
+      <rect
+        x={cx - fundoW / 2}
+        y={cy - fundoH / 2}
+        width={fundoW}
+        height={fundoH}
+        rx={fonteNome * 0.2}
+        fill="#f8f1e7"
+        fillOpacity={0.88}
+      />
+      {linhas.map((linha, i) => (
+        <text
+          key={linha + i}
+          x={cx}
+          y={cy - blocoH / 2 + lineH * i + lineH * 0.78}
+          textAnchor="middle"
+          fill="#3d2411"
+          fontSize={fonteNome}
+          fontWeight={700}
+        >
+          {linha}
+        </text>
+      ))}
+    </g>
   );
 }
 

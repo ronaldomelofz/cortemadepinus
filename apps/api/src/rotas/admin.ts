@@ -1,12 +1,20 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { calcularResumo, mudarStatusSchema, STATUS_PEDIDO } from '@cortemadepinus/shared';
-import { exigirAdmin, exigirAutenticacao } from '../lib/auth';
+import {
+  adminClienteSchema,
+  calcularResumo,
+  configuracaoCorteSchema,
+  mudarStatusSchema,
+  produtoMdfSchema,
+  STATUS_PEDIDO,
+} from '@cortemadepinus/shared';
+import { exigirAdmin, exigirAutenticacao, gerarHash } from '../lib/auth';
 import { contemTexto } from '../lib/busca';
-import { assincrono, naoEncontrado } from '../lib/erros';
-import { inclusaoPedido, mapearPedido, mapearUsuario } from '../lib/mapear';
+import { assincrono, naoEncontrado, requisicaoInvalida } from '../lib/erros';
+import { inclusaoPedido, mapearConfiguracao, mapearPedido, mapearProduto, mapearUsuario } from '../lib/mapear';
 import { garantirTransicao } from '../lib/pedidoServico';
 import { prisma } from '../prisma';
+import { obterConfiguracao } from './catalogo';
 
 export const rotasAdmin = Router();
 
@@ -117,12 +125,41 @@ rotasAdmin.get(
   }),
 );
 
+rotasAdmin.put(
+  '/clientes/:id',
+  assincrono(async (req, res) => {
+    const dados = adminClienteSchema.parse(req.body);
+    const atual = await prisma.usuario.findUnique({ where: { id: req.params.id } });
+    if (!atual || atual.role !== 'CLIENTE') throw naoEncontrado('Cliente');
+
+    if (dados.email !== atual.email) {
+      const conflito = await prisma.usuario.findUnique({ where: { email: dados.email } });
+      if (conflito) throw requisicaoInvalida('Já existe uma conta com este e-mail');
+    }
+
+    const cliente = await prisma.usuario.update({
+      where: { id: atual.id },
+      data: {
+        nome: dados.nome,
+        email: dados.email,
+        telefone: dados.telefone || null,
+        empresa: dados.empresa || null,
+        documento: dados.documento || null,
+        ...(dados.senha ? { senhaHash: await gerarHash(dados.senha) } : {}),
+      },
+    });
+    res.json({ usuario: mapearUsuario(cliente) });
+  }),
+);
+
 rotasAdmin.patch(
   '/clientes/:id',
   assincrono(async (req, res) => {
     const dados = z.object({ ativo: z.boolean() }).parse(req.body);
+    const atual = await prisma.usuario.findUnique({ where: { id: req.params.id } });
+    if (!atual || atual.role !== 'CLIENTE') throw naoEncontrado('Cliente');
     const cliente = await prisma.usuario.update({
-      where: { id: req.params.id },
+      where: { id: atual.id },
       data: { ativo: dados.ativo },
     });
     res.json({ usuario: mapearUsuario(cliente) });
@@ -162,3 +199,124 @@ rotasAdmin.get(
     });
   }),
 );
+
+rotasAdmin.get(
+  '/configuracao',
+  assincrono(async (_req, res) => {
+    res.json({ configuracao: await obterConfiguracao() });
+  }),
+);
+
+rotasAdmin.put(
+  '/configuracao',
+  assincrono(async (req, res) => {
+    const dados = configuracaoCorteSchema.parse(req.body);
+    const atualizada = await prisma.configuracao.upsert({
+      where: { id: 'padrao' },
+      create: { id: 'padrao', serraMm: dados.serraMm, valorCorte: dados.valorCorte },
+      update: { serraMm: dados.serraMm, valorCorte: dados.valorCorte },
+    });
+    res.json({ configuracao: mapearConfiguracao(atualizada) });
+  }),
+);
+
+rotasAdmin.get(
+  '/produtos',
+  assincrono(async (req, res) => {
+    const busca = typeof req.query.busca === 'string' ? req.query.busca : undefined;
+    const produtos = await prisma.produtoMdf.findMany({
+      where: busca
+        ? {
+            OR: [
+              { nome: contemTexto(busca) },
+              { cor: contemTexto(busca) },
+            ],
+          }
+        : undefined,
+      orderBy: [{ ativo: 'desc' }, { nome: 'asc' }, { espessura: 'asc' }],
+    });
+    res.json({ itens: produtos.map(mapearProduto) });
+  }),
+);
+
+rotasAdmin.post(
+  '/produtos',
+  assincrono(async (req, res) => {
+    const dados = produtoMdfSchema.parse(req.body);
+    const codigo = dados.codigo ?? (await proximoCodigoProduto());
+    const existente = await prisma.produtoMdf.findUnique({ where: { codigo } });
+    if (existente) throw requisicaoInvalida(`Já existe um MDF com o código ${codigo}`);
+
+    const produto = await prisma.produtoMdf.create({
+      data: {
+        codigo,
+        nome: dados.nome,
+        cor: dados.cor,
+        espessura: dados.espessura,
+        largura: dados.largura,
+        comprimento: dados.comprimento,
+        ativo: dados.ativo ?? true,
+      },
+    });
+    res.status(201).json({ produto: mapearProduto(produto) });
+  }),
+);
+
+rotasAdmin.put(
+  '/produtos/:id',
+  assincrono(async (req, res) => {
+    const dados = produtoMdfSchema.parse(req.body);
+    const atual = await prisma.produtoMdf.findUnique({ where: { id: req.params.id } });
+    if (!atual) throw naoEncontrado('Produto');
+
+    const codigo = dados.codigo ?? atual.codigo;
+    if (codigo !== atual.codigo) {
+      const conflito = await prisma.produtoMdf.findUnique({ where: { codigo } });
+      if (conflito) throw requisicaoInvalida(`Já existe um MDF com o código ${codigo}`);
+    }
+
+    const produto = await prisma.produtoMdf.update({
+      where: { id: atual.id },
+      data: {
+        codigo,
+        nome: dados.nome,
+        cor: dados.cor,
+        espessura: dados.espessura,
+        largura: dados.largura,
+        comprimento: dados.comprimento,
+        ativo: dados.ativo ?? atual.ativo,
+      },
+    });
+    res.json({ produto: mapearProduto(produto) });
+  }),
+);
+
+rotasAdmin.patch(
+  '/produtos/:id',
+  assincrono(async (req, res) => {
+    const dados = z.object({ ativo: z.boolean() }).parse(req.body);
+    const atual = await prisma.produtoMdf.findUnique({ where: { id: req.params.id } });
+    if (!atual) throw naoEncontrado('Produto');
+    const produto = await prisma.produtoMdf.update({
+      where: { id: atual.id },
+      data: { ativo: dados.ativo },
+    });
+    res.json({ produto: mapearProduto(produto) });
+  }),
+);
+
+rotasAdmin.delete(
+  '/produtos/:id',
+  assincrono(async (req, res) => {
+    const atual = await prisma.produtoMdf.findUnique({ where: { id: req.params.id } });
+    if (!atual) throw naoEncontrado('Produto');
+    await prisma.produtoMdf.delete({ where: { id: atual.id } });
+    res.status(204).end();
+  }),
+);
+
+async function proximoCodigoProduto(): Promise<number> {
+  const ultimo = await prisma.produtoMdf.aggregate({ _max: { codigo: true } });
+  const base = ultimo._max.codigo ?? 98999;
+  return Math.max(99000, base + 1);
+}

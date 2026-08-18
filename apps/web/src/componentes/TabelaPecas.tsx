@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { VEIOS, VEIO_LABEL } from '@cortemadepinus/shared';
-import type { MaterialForm, PecaForm } from '../lib/formularioPedido';
+import { rotuloMaterial, type MaterialForm, type PecaForm } from '../lib/formularioPedido';
 
 interface Props {
   pecas: PecaForm[];
@@ -38,7 +38,7 @@ export function TabelaPecas({
           <tr>
             <th className="w-10 px-2 py-2 text-left font-semibold">#</th>
             <th className="w-20 px-2 py-2 text-left font-semibold">Cód.</th>
-            <th className="w-52 px-2 py-2 text-left font-semibold">Material</th>
+            <th className="min-w-64 px-2 py-2 text-left font-semibold">Material</th>
             <th className="w-20 px-2 py-2 text-right font-semibold">Qtd</th>
             <th className="w-24 px-2 py-2 text-right font-semibold">Largura</th>
             <th className="w-24 px-2 py-2 text-right font-semibold">Altura</th>
@@ -69,7 +69,7 @@ export function TabelaPecas({
                   >
                     {materiais.map((material) => (
                       <option key={material.chave} value={material.codigo}>
-                        {material.codigo} · {material.descricao || 'sem descrição'}
+                        {rotuloMaterial(material)}
                       </option>
                     ))}
                   </select>

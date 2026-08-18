@@ -1,14 +1,28 @@
 import { CHAPAS_PADRAO, ESPESSURAS_PADRAO, type MaterialForm } from '../lib/formularioPedido';
 import { Botao } from './ui';
+import type { ProdutoMdf } from '@cortemadepinus/shared';
 
 interface Props {
   materiais: MaterialForm[];
+  produtos?: ProdutoMdf[];
   aoAlterar: (indice: number, campo: keyof MaterialForm, valor: string | boolean) => void;
   aoAdicionar: () => void;
   aoRemover: (indice: number) => void;
+  aoEscolherProduto?: (indice: number, produto: ProdutoMdf) => void;
 }
 
-export function EditorMateriais({ materiais, aoAlterar, aoAdicionar, aoRemover }: Props) {
+function rotuloProduto(produto: ProdutoMdf): string {
+  return `${produto.nome} · ${produto.cor} · ${produto.espessura} mm · ${produto.comprimento}×${produto.largura}`;
+}
+
+export function EditorMateriais({
+  materiais,
+  produtos = [],
+  aoAlterar,
+  aoAdicionar,
+  aoRemover,
+  aoEscolherProduto,
+}: Props) {
   return (
     <div className="space-y-3">
       {materiais.map((material, indice) => (
@@ -30,6 +44,27 @@ export function EditorMateriais({ materiais, aoAlterar, aoAdicionar, aoRemover }
               </button>
             )}
           </div>
+
+          {produtos.length > 0 && aoEscolherProduto && (
+            <label className="mb-3 block">
+              <span className="rotulo">Escolher MDF cadastrado</span>
+              <select
+                className="campo"
+                value={produtos.some((p) => String(p.codigo) === material.codigo) ? material.codigo : ''}
+                onChange={(e) => {
+                  const produto = produtos.find((p) => String(p.codigo) === e.target.value);
+                  if (produto) aoEscolherProduto(indice, produto);
+                }}
+              >
+                <option value="">Selecionar produto da central…</option>
+                {produtos.map((produto) => (
+                  <option key={produto.id} value={String(produto.codigo)}>
+                    {rotuloProduto(produto)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
             <label className="block">

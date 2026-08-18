@@ -43,6 +43,19 @@ export const STATUS_COR: Record<StatusPedido, string> = {
   CANCELADO: 'bg-rose-50 text-rose-700 ring-rose-200',
 };
 
+/** O cliente ainda pode alterar peças, materiais e anexos. */
+export function pedidoEditavelPeloCliente(status: StatusPedido): boolean {
+  return status === 'RASCUNHO';
+}
+
+/**
+ * Já foi enviado, mas a central ainda não iniciou a análise.
+ * O cliente pode voltar o pedido a rascunho para corrigir o plano.
+ */
+export function pedidoReabivelPeloCliente(status: StatusPedido): boolean {
+  return status === 'ENVIADO';
+}
+
 /**
  * Sentido do veio da peca. Na seccionadora o veio determina se a peca pode
  * ou nao ser girada 90 graus durante a otimizacao.
@@ -166,4 +179,26 @@ export interface ResumoPedido {
     fitaMl: number;
     chapasEstimadas: number;
   }>;
+}
+
+/** Chapa de MDF cadastrada pela central para o cliente escolher no pedido. */
+export interface ProdutoMdf {
+  id: string;
+  codigo: number;
+  nome: string;
+  cor: string;
+  espessura: number;
+  /** Lado menor da chapa, em mm (ex.: 1840). Vira a altura no plano de corte. */
+  largura: number;
+  /** Lado maior da chapa, em mm (ex.: 2750). Vira a largura no plano de corte. */
+  comprimento: number;
+  ativo: boolean;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+/** Parâmetros globais de corte usados no plano e no orçamento. */
+export interface ConfiguracaoCorte {
+  serraMm: number;
+  valorCorte: number;
 }

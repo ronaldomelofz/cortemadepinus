@@ -13,9 +13,9 @@ export const prisma = new PrismaClient({
  */
 export async function prepararBanco(): Promise<void> {
   if (env.ehPostgres) return;
-  await prisma.$executeRawUnsafe('PRAGMA journal_mode = WAL;');
-  await prisma.$executeRawUnsafe('PRAGMA busy_timeout = 5000;');
-  await prisma.$executeRawUnsafe('PRAGMA foreign_keys = ON;');
+  await prisma.$queryRawUnsafe('PRAGMA journal_mode = WAL');
+  await prisma.$queryRawUnsafe('PRAGMA busy_timeout = 5000');
+  await prisma.$queryRawUnsafe('PRAGMA foreign_keys = ON');
 }
 
 export async function desconectarPrisma(): Promise<void> {

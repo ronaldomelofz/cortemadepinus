@@ -1,12 +1,17 @@
-import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   calcularResumo,
   formatarData,
   formatarM2,
   formatarMoeda,
+  pedidoEditavelPeloCliente,
+  pedidoReabivelPeloCliente,
+  SERRA_PADRAO_MM,
+  VALOR_CORTE_PADRAO,
   STATUS_LABEL,
   VEIO_LABEL,
+  type ConfiguracaoCorte,
   type Pedido,
   type ResumoPedido,
   type StatusPedido,
@@ -14,6 +19,7 @@ import {
 import { Aviso, Botao, Carregando, EtiquetaStatus, Metrica } from '../componentes/ui';
 import { VisualizacaoPlano } from '../componentes/VisualizacaoPlano';
 import { api, ErroApi } from '../lib/api';
+import { pedidoParaFormulario, resumirCortes } from '../lib/formularioPedido';
 import { useSessao } from '../lib/sessao';
 
 const TRANSICOES: Record<StatusPedido, StatusPedido[]> = {
@@ -40,6 +46,10 @@ export function DetalhePedido() {
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [texto, setTexto] = useState('');
+  const [configCorte, setConfigCorte] = useState<ConfiguracaoCorte>({
+    serraMm: SERRA_PADRAO_MM,
+    valorCorte: VALOR_CORTE_PADRAO,
+  });
 
   async function recarregar() {
     if (!id) return;
@@ -49,12 +59,24 @@ export function DetalhePedido() {
   }
 
   useEffect(() => {
+    api
+      .catalogoConfiguracao()
+      .then((resposta) => setConfigCorte(resposta.configuracao))
+      .catch(() => setConfigCorte({ serraMm: SERRA_PADRAO_MM, valorCorte: VALOR_CORTE_PADRAO }));
+  }, []);
+
+  useEffect(() => {
     setCarregando(true);
     recarregar()
       .catch((falha) => setErro(falha instanceof ErroApi ? falha.message : 'Falha ao carregar o pedido'))
       .finally(() => setCarregando(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  const cortes = useMemo(() => {
+    if (!pedido) return { totalCortes: 0, valorEstimado: 0, valorUnitario: configCorte.valorCorte };
+    return resumirCortes(pedidoParaFormulario(pedido), configCorte);
+  }, [pedido, configCorte]);
 
   async function executar(acao: () => Promise<unknown>) {
     setErro(null);
@@ -73,7 +95,34 @@ export function DetalhePedido() {
   if (!pedido || !resumo) return <Aviso tipo="erro">{erro ?? 'Pedido não encontrado'}</Aviso>;
 
   const materiaisPorId = new Map(pedido.materiais.map((m) => [m.id, m]));
-  const podeEditar = pedido.status === 'RASCUNHO';
+  const podeEditar = pedidoEditavelPeloCliente(pedido.status);
+  const podeReabrir = !ehAdmin && pedidoReabivelPeloCliente(pedido.status);
+  const destinoEdicao = `/app/pedidos/${pedido.id}/editar`;
+  const pedidoId = pedido.id;
+
+  async function irParaEdicao() {
+    if (podeEditar) {
+      navegar(destinoEdicao);
+      return;
+    }
+    if (
+      !confirm(
+        'O pedido voltará para rascunho para você ajustar o plano. Depois é preciso enviar de novo para a central.',
+      )
+    ) {
+      return;
+    }
+    setErro(null);
+    setOcupado(true);
+    try {
+      await api.reabrirPedido(pedidoId);
+      navegar(destinoEdicao);
+    } catch (falha) {
+      setErro(falha instanceof ErroApi ? falha.message : 'Não foi possível reabrir o plano');
+    } finally {
+      setOcupado(false);
+    }
+  }
 
   return (
     <div className="space-y-6 pb-8">
@@ -101,18 +150,19 @@ export function DetalhePedido() {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          {(podeEditar || podeReabrir) && (
+            <Botao variante={podeEditar ? 'primario' : 'secundario'} carregando={ocupado} onClick={() => void irParaEdicao()}>
+              Editar plano de corte
+            </Botao>
+          )}
           {podeEditar && !ehAdmin && (
-            <>
-              <Link to={`/app/pedidos/${pedido.id}/editar`}>
-                <Botao variante="secundario">Editar</Botao>
-              </Link>
-              <Botao
-                carregando={ocupado}
-                onClick={() => void executar(() => api.enviarPedido(pedido.id))}
-              >
-                Enviar para a central
-              </Botao>
-            </>
+            <Botao
+              variante="secundario"
+              carregando={ocupado}
+              onClick={() => void executar(() => api.enviarPedido(pedido.id))}
+            >
+              Enviar para a central
+            </Botao>
           )}
           {podeEditar && (
             <Botao
@@ -134,10 +184,29 @@ export function DetalhePedido() {
 
       {erro && <Aviso tipo="erro">{erro}</Aviso>}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {podeEditar && (
+        <Aviso tipo="atencao">
+          Este plano ainda é rascunho. Você pode editar peças e materiais até enviar o serviço para a
+          central.
+        </Aviso>
+      )}
+      {podeReabrir && (
+        <Aviso tipo="atencao">
+          O plano já foi enviado, mas a central ainda não iniciou a análise. Use{' '}
+          <strong>Editar plano de corte</strong> para corrigir as peças — o pedido volta a rascunho e
+          precisa ser enviado de novo.
+        </Aviso>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Metrica rotulo="Itens" valor={resumo.totalItens} />
         <Metrica rotulo="Peças" valor={resumo.totalPecas} />
         <Metrica rotulo="Área total" valor={formatarM2(resumo.areaTotalM2)} />
+        <Metrica
+          rotulo="Valor estimado dos cortes"
+          valor={formatarMoeda(cortes.valorEstimado)}
+          detalhe={`${cortes.totalCortes} corte(s) × ${formatarMoeda(cortes.valorUnitario)}`}
+        />
         <Metrica
           rotulo="Orçamento"
           valor={pedido.valorOrcamento != null ? formatarMoeda(pedido.valorOrcamento) : '—'}
@@ -176,7 +245,9 @@ export function DetalhePedido() {
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100 bg-white">
-              {pedido.materiais.map((material) => {
+              {pedido.materiais
+                .filter((material) => (resumo.porMaterial.find((m) => m.materialId === material.id)?.totalPecas ?? 0) > 0)
+                .map((material) => {
                 const linha = resumo.porMaterial.find((m) => m.materialId === material.id);
                 return (
                   <tr key={material.id}>
@@ -203,7 +274,14 @@ export function DetalhePedido() {
       </section>
 
       <section className="cartao p-5">
-        <h2 className="mb-3 text-base font-bold text-stone-900">Lista de peças</h2>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-bold text-stone-900">Lista de peças</h2>
+          {(podeEditar || podeReabrir) && (
+            <Botao variante="secundario" carregando={ocupado} onClick={() => void irParaEdicao()}>
+              Editar peças
+            </Botao>
+          )}
+        </div>
         <div className="overflow-x-auto rounded-xl border border-stone-200">
           <table className="w-full min-w-[860px] text-sm">
             <thead className="bg-stone-100 text-xs uppercase text-stone-500">
@@ -251,6 +329,31 @@ export function DetalhePedido() {
             ...peca,
             materialCodigo: materiaisPorId.get(peca.materialId)?.codigo ?? 0,
           }))}
+          serraMm={configCorte.serraMm}
+          valorCorte={configCorte.valorCorte}
+          acoes={
+            ehAdmin ? (
+              <>
+                <Botao
+                  type="button"
+                  onClick={() =>
+                    window.open(`/admin/pedidos/${pedido.id}/imprimir/planos`, '_blank', 'noopener')
+                  }
+                >
+                  Imprimir planos de corte
+                </Botao>
+                <Botao
+                  type="button"
+                  variante="secundario"
+                  onClick={() =>
+                    window.open(`/admin/pedidos/${pedido.id}/imprimir/etiquetas`, '_blank', 'noopener')
+                  }
+                >
+                  Imprimir etiquetas
+                </Botao>
+              </>
+            ) : undefined
+          }
         />
       </section>
 

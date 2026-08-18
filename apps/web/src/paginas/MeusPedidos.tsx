@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   formatarData,
   formatarM2,
+  pedidoEditavelPeloCliente,
   STATUS_LABEL,
   STATUS_PEDIDO,
   type StatusPedido,
@@ -95,44 +96,57 @@ export function MeusPedidos() {
         />
       ) : (
         <div className="grid gap-3">
-          {pedidos.map((pedido) => (
-            <Link
-              key={pedido.id}
-              to={`/app/pedidos/${pedido.id}`}
-              className="cartao flex flex-wrap items-center gap-4 p-4 transition hover:border-madeira-300 hover:shadow-md"
-            >
-              <div className="min-w-56 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="rounded bg-stone-100 px-2 py-0.5 text-xs font-bold tabular-nums text-stone-600">
-                    #{String(pedido.numero).padStart(5, '0')}
-                  </span>
-                  <EtiquetaStatus status={pedido.status} />
-                </div>
-                <p className="mt-2 text-base font-semibold text-stone-900">{pedido.titulo}</p>
-                <p className="text-xs text-stone-500">
-                  {pedido.ambiente ? `${pedido.ambiente} · ` : ''}
-                  Criado em {formatarData(pedido.criadoEm)}
-                </p>
-              </div>
+          {pedidos.map((pedido) => {
+            const rascunho = pedidoEditavelPeloCliente(pedido.status);
+            return (
+              <div
+                key={pedido.id}
+                className="cartao flex flex-wrap items-center gap-4 p-4 transition hover:border-madeira-300 hover:shadow-md"
+              >
+                <Link to={`/app/pedidos/${pedido.id}`} className="min-w-56 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded bg-stone-100 px-2 py-0.5 text-xs font-bold tabular-nums text-stone-600">
+                      #{String(pedido.numero).padStart(5, '0')}
+                    </span>
+                    <EtiquetaStatus status={pedido.status} />
+                  </div>
+                  <p className="mt-2 text-base font-semibold text-stone-900">{pedido.titulo}</p>
+                  <p className="text-xs text-stone-500">
+                    {pedido.ambiente ? `${pedido.ambiente} · ` : ''}
+                    Criado em {formatarData(pedido.criadoEm)}
+                  </p>
+                </Link>
 
-              <dl className="flex flex-wrap gap-6 text-sm">
-                <div>
-                  <dt className="text-xs uppercase text-stone-400">Peças</dt>
-                  <dd className="font-semibold tabular-nums text-stone-800">{pedido.resumo.totalPecas}</dd>
+                <dl className="flex flex-wrap gap-6 text-sm">
+                  <div>
+                    <dt className="text-xs uppercase text-stone-400">Peças</dt>
+                    <dd className="font-semibold tabular-nums text-stone-800">{pedido.resumo.totalPecas}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs uppercase text-stone-400">Área</dt>
+                    <dd className="font-semibold tabular-nums text-stone-800">
+                      {formatarM2(pedido.resumo.areaTotalM2)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs uppercase text-stone-400">Materiais</dt>
+                    <dd className="font-semibold tabular-nums text-stone-800">{pedido.materiais.length}</dd>
+                  </div>
+                </dl>
+
+                <div className="flex flex-wrap gap-2">
+                  {rascunho && (
+                    <Link to={`/app/pedidos/${pedido.id}/editar`}>
+                      <Botao>Editar</Botao>
+                    </Link>
+                  )}
+                  <Link to={`/app/pedidos/${pedido.id}`}>
+                    <Botao variante="secundario">{rascunho ? 'Ver' : 'Abrir'}</Botao>
+                  </Link>
                 </div>
-                <div>
-                  <dt className="text-xs uppercase text-stone-400">Área</dt>
-                  <dd className="font-semibold tabular-nums text-stone-800">
-                    {formatarM2(pedido.resumo.areaTotalM2)}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs uppercase text-stone-400">Materiais</dt>
-                  <dd className="font-semibold tabular-nums text-stone-800">{pedido.materiais.length}</dd>
-                </div>
-              </dl>
-            </Link>
-          ))}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

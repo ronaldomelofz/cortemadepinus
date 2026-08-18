@@ -46,6 +46,7 @@ const LINKS_ADMIN = [
   { para: '/admin', rotulo: 'Painel', fim: true },
   { para: '/admin/pedidos', rotulo: 'Pedidos' },
   { para: '/admin/clientes', rotulo: 'Clientes' },
+  { para: '/admin/cadastros', rotulo: 'Cadastros' },
 ];
 
 export function LayoutApp() {

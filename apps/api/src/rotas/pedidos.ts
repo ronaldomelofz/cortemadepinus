@@ -17,6 +17,7 @@ import {
   buscarPedidoAutorizado,
   criarPedido,
   garantirEdicaoDoCliente,
+  reabrirPedido,
 } from '../lib/pedidoServico';
 import { caminhoDoAnexo, removerArquivo, upload } from '../lib/upload';
 import { prisma } from '../prisma';
@@ -131,6 +132,15 @@ rotasPedidos.post(
     });
 
     const pedido = mapearPedido(atualizado);
+    res.json({ pedido, resumo: calcularResumo(pedido) });
+  }),
+);
+
+rotasPedidos.post(
+  '/:id/reabrir',
+  assincrono(async (req, res) => {
+    const registro = await buscarPedidoAutorizado(req.params.id, req.usuario!);
+    const pedido = await reabrirPedido(registro.id, req.usuario!.id);
     res.json({ pedido, resumo: calcularResumo(pedido) });
   }),
 );

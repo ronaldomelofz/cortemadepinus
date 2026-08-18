@@ -2,25 +2,32 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   formatarM2,
+  formatarMoeda,
   importarPecas,
   pedidoCompletoSchema,
+  pedidoEditavelPeloCliente,
+  pedidoReabivelPeloCliente,
+  SERRA_PADRAO_MM,
+  VALOR_CORTE_PADRAO,
+  type ConfiguracaoCorte,
   type PecaImportada,
+  type ProdutoMdf,
+  type StatusPedido,
 } from '@cortemadepinus/shared';
-import { EditorMateriais } from '../componentes/EditorMateriais';
 import { ImportarPecas } from '../componentes/ImportarPecas';
 import { TabelaPecas } from '../componentes/TabelaPecas';
 import { Aviso, Botao, Carregando, Metrica } from '../componentes/ui';
 import { VisualizacaoPlano } from '../componentes/VisualizacaoPlano';
 import { api, ErroApi } from '../lib/api';
 import {
+  aplicarCatalogo,
   formularioInicial,
   formularioParaPayload,
-  materialVazio,
   novaChave,
   pecaVazia,
   pedidoParaFormulario,
+  resumirCortes,
   resumirFormulario,
-  type MaterialForm,
   type PecaForm,
   type PedidoForm,
 } from '../lib/formularioPedido';
@@ -31,72 +38,75 @@ export function EditorPedido() {
   const [formulario, setFormulario] = useState<PedidoForm>(formularioInicial);
   const [carregando, setCarregando] = useState(Boolean(id));
   const [salvando, setSalvando] = useState(false);
+  const [reabrindo, setReabrindo] = useState(false);
   const [erroGeral, setErroGeral] = useState<string | null>(null);
   const [errosGerais, setErrosGerais] = useState<string[]>([]);
   const [errosPecas, setErrosPecas] = useState<Record<number, string>>({});
   const [importando, setImportando] = useState(false);
   const [mensagemOk, setMensagemOk] = useState<string | null>(null);
+  const [statusPedido, setStatusPedido] = useState<StatusPedido | null>(id ? null : 'RASCUNHO');
+  const [produtos, setProdutos] = useState<ProdutoMdf[]>([]);
+  const [catalogoPronto, setCatalogoPronto] = useState(false);
+  const [configCorte, setConfigCorte] = useState<ConfiguracaoCorte>({
+    serraMm: SERRA_PADRAO_MM,
+    valorCorte: VALOR_CORTE_PADRAO,
+  });
+
+  const podeEditar = !statusPedido || pedidoEditavelPeloCliente(statusPedido);
+  const podeReabrir = Boolean(statusPedido && pedidoReabivelPeloCliente(statusPedido));
 
   useEffect(() => {
-    if (!id) return;
-    setCarregando(true);
-    api
-      .obterPedido(id)
-      .then(({ pedido }) => {
-        if (pedido.status !== 'RASCUNHO') {
-          setErroGeral('Este pedido já foi enviado e não pode mais ser editado.');
+    let cancelado = false;
+
+    async function carregar() {
+      const [catalogo, conf] = await Promise.all([
+        api.catalogoProdutos().catch(() => ({ itens: [] as ProdutoMdf[] })),
+        api
+          .catalogoConfiguracao()
+          .catch(() => ({ configuracao: { serraMm: SERRA_PADRAO_MM, valorCorte: VALOR_CORTE_PADRAO } })),
+      ]);
+      if (cancelado) return;
+      setProdutos(catalogo.itens);
+      setConfigCorte(conf.configuracao);
+      setCatalogoPronto(true);
+
+      if (!id) {
+        setFormulario((atual) => aplicarCatalogo(atual, catalogo.itens));
+        return;
+      }
+
+      setCarregando(true);
+      try {
+        const { pedido } = await api.obterPedido(id);
+        if (cancelado) return;
+        setStatusPedido(pedido.status);
+        setFormulario(aplicarCatalogo(pedidoParaFormulario(pedido), catalogo.itens));
+        if (pedidoReabivelPeloCliente(pedido.status)) {
+          setErroGeral(null);
+          setMensagemOk(
+            'Este pedido já foi enviado. Para editar, ele volta a rascunho e precisa ser enviado de novo à central.',
+          );
+        } else if (!pedidoEditavelPeloCliente(pedido.status)) {
+          setErroGeral('A central já iniciou este serviço. O plano não pode mais ser editado por aqui.');
         }
-        setFormulario(pedidoParaFormulario(pedido));
-      })
-      .catch((falha) => setErroGeral(falha instanceof ErroApi ? falha.message : 'Falha ao carregar'))
-      .finally(() => setCarregando(false));
+      } catch (falha) {
+        if (!cancelado) setErroGeral(falha instanceof ErroApi ? falha.message : 'Falha ao carregar');
+      } finally {
+        if (!cancelado) setCarregando(false);
+      }
+    }
+
+    void carregar();
+    return () => {
+      cancelado = true;
+    };
   }, [id]);
 
   const resumo = useMemo(() => resumirFormulario(formulario), [formulario]);
-
-  /* --------------------------- Materiais --------------------------- */
-
-  function alterarMaterial(indice: number, campo: keyof MaterialForm, valor: string | boolean) {
-    setFormulario((atual) => {
-      const materiais = atual.materiais.map((material, i) =>
-        i === indice ? { ...material, [campo]: valor } : material,
-      );
-      // Mantem as pecas apontando para o material quando o codigo muda.
-      if (campo === 'codigo') {
-        const anterior = atual.materiais[indice].codigo;
-        return {
-          ...atual,
-          materiais,
-          pecas: atual.pecas.map((peca) =>
-            peca.materialCodigo === anterior ? { ...peca, materialCodigo: String(valor) } : peca,
-          ),
-        };
-      }
-      return { ...atual, materiais };
-    });
-  }
-
-  function adicionarMaterial() {
-    setFormulario((atual) => {
-      const maiorCodigo = Math.max(99000, ...atual.materiais.map((m) => Number(m.codigo) || 0));
-      return { ...atual, materiais: [...atual.materiais, materialVazio(maiorCodigo + 1)] };
-    });
-  }
-
-  function removerMaterial(indice: number) {
-    setFormulario((atual) => {
-      const removido = atual.materiais[indice];
-      const materiais = atual.materiais.filter((_, i) => i !== indice);
-      const substituto = materiais[0]?.codigo ?? '';
-      return {
-        ...atual,
-        materiais,
-        pecas: atual.pecas.map((peca) =>
-          peca.materialCodigo === removido.codigo ? { ...peca, materialCodigo: substituto } : peca,
-        ),
-      };
-    });
-  }
+  const cortes = useMemo(
+    () => resumirCortes(formulario, configCorte),
+    [formulario, configCorte],
+  );
 
   /* ----------------------------- Peças ----------------------------- */
 
@@ -147,39 +157,33 @@ export function EditorPedido() {
 
   function aplicarImportacao(importadas: PecaImportada[], substituir: boolean) {
     setFormulario((atual) => {
-      const codigosConhecidos = new Set(atual.materiais.map((m) => m.codigo));
-      const materiais = [...atual.materiais];
+      const conhecidos = new Set(atual.materiais.map((m) => m.codigo));
+      const padrao = atual.materiais[0]?.codigo ?? '';
 
-      // Cria automaticamente os materiais citados no arquivo que ainda nao existem.
-      importadas.forEach((peca) => {
+      const convertidas: PecaForm[] = importadas.map((peca) => {
         const codigo = String(peca.materialCodigo);
-        if (!codigosConhecidos.has(codigo)) {
-          codigosConhecidos.add(codigo);
-          materiais.push({ ...materialVazio(peca.materialCodigo), descricao: `Material ${codigo}` });
-        }
+        return {
+          chave: novaChave(),
+          codigo: String(peca.codigo),
+          materialCodigo: conhecidos.has(codigo) ? codigo : padrao,
+          quantidade: String(peca.quantidade),
+          largura: String(peca.largura),
+          altura: String(peca.altura),
+          descricao: peca.descricao,
+          veio: peca.veio ?? 'INDIFERENTE',
+          fitaC1: false,
+          fitaC2: false,
+          fitaL1: false,
+          fitaL2: false,
+          observacao: peca.observacao ?? '',
+        };
       });
-
-      const convertidas: PecaForm[] = importadas.map((peca) => ({
-        chave: novaChave(),
-        codigo: String(peca.codigo),
-        materialCodigo: String(peca.materialCodigo),
-        quantidade: String(peca.quantidade),
-        largura: String(peca.largura),
-        altura: String(peca.altura),
-        descricao: peca.descricao,
-        veio: peca.veio ?? 'INDIFERENTE',
-        fitaC1: false,
-        fitaC2: false,
-        fitaL1: false,
-        fitaL2: false,
-        observacao: peca.observacao ?? '',
-      }));
 
       const anteriores = substituir
         ? []
         : atual.pecas.filter((p) => p.largura.trim() !== '' || p.descricao.trim() !== '');
 
-      return { ...atual, materiais, pecas: [...anteriores, ...convertidas] };
+      return { ...atual, pecas: [...anteriores, ...convertidas] };
     });
     setMensagemOk(`${importadas.length} peça(s) importada(s).`);
   }
@@ -210,6 +214,7 @@ export function EditorPedido() {
   }
 
   async function salvar(enviar: boolean) {
+    if (!podeEditar) return;
     setErroGeral(null);
     setMensagemOk(null);
     const payload = validar();
@@ -218,17 +223,34 @@ export function EditorPedido() {
     setSalvando(true);
     try {
       const resposta = id ? await api.atualizarPedido(id, payload) : await api.criarPedido(payload);
+      setStatusPedido(resposta.pedido.status);
       if (enviar) {
         await api.enviarPedido(resposta.pedido.id);
         navegar(`/app/pedidos/${resposta.pedido.id}`, { replace: true });
         return;
       }
-      setMensagemOk('Rascunho salvo com sucesso.');
+      setMensagemOk('Rascunho salvo. Você pode continuar editando até enviar para a central.');
       if (!id) navegar(`/app/pedidos/${resposta.pedido.id}/editar`, { replace: true });
     } catch (falha) {
       setErroGeral(falha instanceof ErroApi ? falha.message : 'Não foi possível salvar o pedido');
     } finally {
       setSalvando(false);
+    }
+  }
+
+  async function reabrirParaEditar() {
+    if (!id) return;
+    setErroGeral(null);
+    setReabrindo(true);
+    try {
+      const resposta = await api.reabrirPedido(id);
+      setStatusPedido(resposta.pedido.status);
+      setFormulario(aplicarCatalogo(pedidoParaFormulario(resposta.pedido), produtos));
+      setMensagemOk('Pedido reaberto como rascunho. Ajuste o plano e envie de novo para a central.');
+    } catch (falha) {
+      setErroGeral(falha instanceof ErroApi ? falha.message : 'Não foi possível reabrir o plano');
+    } finally {
+      setReabrindo(false);
     }
   }
 
@@ -242,16 +264,30 @@ export function EditorPedido() {
             {id ? 'Editar plano de corte' : 'Novo plano de corte'}
           </h1>
           <p className="mt-1 text-sm text-stone-500">
-            Lance as medidas em milímetros. Salvamos como rascunho até você enviar para a central.
+            Lance as medidas em milímetros e escolha o MDF cadastrado pela central em cada peça.
           </p>
         </div>
         <div className="flex gap-2">
-          <Botao variante="secundario" onClick={() => salvar(false)} carregando={salvando}>
-            Salvar rascunho
-          </Botao>
-          <Botao onClick={() => salvar(true)} carregando={salvando}>
-            Enviar para a central
-          </Botao>
+          {podeReabrir && (
+            <Botao onClick={() => void reabrirParaEditar()} carregando={reabrindo}>
+              Reabrir e editar
+            </Botao>
+          )}
+          {podeEditar && (
+            <>
+              <Botao variante="secundario" onClick={() => salvar(false)} carregando={salvando}>
+                Salvar rascunho
+              </Botao>
+              <Botao onClick={() => salvar(true)} carregando={salvando}>
+                Enviar para a central
+              </Botao>
+            </>
+          )}
+          {!podeEditar && !podeReabrir && id && (
+            <Botao variante="secundario" onClick={() => navegar(`/app/pedidos/${id}`)}>
+              Voltar ao pedido
+            </Botao>
+          )}
         </div>
       </div>
 
@@ -267,6 +303,14 @@ export function EditorPedido() {
         </Aviso>
       )}
 
+      {catalogoPronto && produtos.length === 0 && (
+        <Aviso tipo="atencao">
+          A central ainda não cadastrou MDFs. Peça ao administrador para incluir os produtos em Cadastros
+          antes de montar o plano.
+        </Aviso>
+      )}
+
+      <div className={podeEditar ? undefined : 'pointer-events-none opacity-60'}>
       <section className="cartao p-5">
         <h2 className="mb-4 text-base font-bold text-stone-900">1. Dados do projeto</h2>
         <div className="grid gap-4 md:grid-cols-3">
@@ -310,36 +354,27 @@ export function EditorPedido() {
       </section>
 
       <section className="cartao p-5">
-        <h2 className="mb-1 text-base font-bold text-stone-900">2. Materiais e chapas</h2>
-        <p className="mb-4 text-sm text-stone-500">
-          O código do material é o mesmo enviado ao Corte Certo. Use um código diferente para cada cor e
-          espessura.
-        </p>
-        <EditorMateriais
-          materiais={formulario.materiais}
-          aoAlterar={alterarMaterial}
-          aoAdicionar={adicionarMaterial}
-          aoRemover={removerMaterial}
-        />
-      </section>
-
-      <section className="cartao p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-bold text-stone-900">3. Lista de peças</h2>
+            <h2 className="text-base font-bold text-stone-900">2. Lista de peças</h2>
             <p className="text-sm text-stone-500">
-              Digite, cole direto do Excel (Ctrl+V sobre a tabela) ou importe um arquivo.
+              Em cada linha, escolha o MDF cadastrado pela central. Digite, cole do Excel (Ctrl+V) ou
+              importe um arquivo.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Botao type="button" variante="secundario" onClick={() => setImportando(true)}>
               Importar CSV/TXT
             </Botao>
-            <Botao type="button" variante="secundario" onClick={() => adicionarPecas(1)}>
-              + 1 peça
-            </Botao>
-            <Botao type="button" variante="secundario" onClick={() => adicionarPecas(10)}>
-              + 10 peças
+            <Botao
+              type="button"
+              className="shadow-md shadow-madeira-700/30"
+              onClick={() => adicionarPecas(1)}
+            >
+              <svg viewBox="0 0 20 20" className="size-4" fill="currentColor" aria-hidden>
+                <path d="M10 3.5a.75.75 0 0 1 .75.75v5h5a.75.75 0 0 1 0 1.5h-5v5a.75.75 0 0 1-1.5 0v-5h-5a.75.75 0 0 1 0-1.5h5v-5A.75.75 0 0 1 10 3.5Z" />
+              </svg>
+              Adicionar peça
             </Botao>
           </div>
         </div>
@@ -360,11 +395,16 @@ export function EditorPedido() {
       </section>
 
       <section className="cartao p-5">
-        <h2 className="mb-4 text-base font-bold text-stone-900">4. Resumo do plano</h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <h2 className="mb-4 text-base font-bold text-stone-900">3. Resumo do plano</h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Metrica rotulo="Itens" valor={resumo.totalItens} detalhe="linhas na lista" />
           <Metrica rotulo="Peças" valor={resumo.totalPecas} detalhe="somando quantidades" />
           <Metrica rotulo="Área total" valor={formatarM2(resumo.areaTotalM2)} />
+          <Metrica
+            rotulo="Valor estimado dos cortes"
+            valor={formatarMoeda(cortes.valorEstimado)}
+            detalhe={`${cortes.totalCortes} corte(s) × ${formatarMoeda(cortes.valorUnitario)}`}
+          />
         </div>
 
         {resumo.porMaterial.length > 0 && (
@@ -402,19 +442,29 @@ export function EditorPedido() {
       </section>
 
       <section className="cartao p-5">
-        <VisualizacaoPlano materiais={formulario.materiais} pecas={formulario.pecas} />
+        <VisualizacaoPlano
+          materiais={formulario.materiais}
+          pecas={formulario.pecas}
+          serraMm={configCorte.serraMm}
+          valorCorte={configCorte.valorCorte}
+        />
       </section>
+      </div>
 
       <div className="flex flex-wrap justify-end gap-3 pb-6">
-        <Botao variante="secundario" onClick={() => navegar('/app')}>
+        <Botao variante="secundario" onClick={() => navegar(id ? `/app/pedidos/${id}` : '/app')}>
           Voltar
         </Botao>
-        <Botao variante="secundario" onClick={() => salvar(false)} carregando={salvando}>
-          Salvar rascunho
-        </Botao>
-        <Botao onClick={() => salvar(true)} carregando={salvando}>
-          Enviar para a central
-        </Botao>
+        {podeEditar && (
+          <>
+            <Botao variante="secundario" onClick={() => salvar(false)} carregando={salvando}>
+              Salvar rascunho
+            </Botao>
+            <Botao onClick={() => salvar(true)} carregando={salvando}>
+              Enviar para a central
+            </Botao>
+          </>
+        )}
       </div>
 
       <ImportarPecas

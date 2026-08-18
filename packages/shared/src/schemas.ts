@@ -34,6 +34,20 @@ export const perfilSchema = z.object({
 });
 export type PerfilInput = z.infer<typeof perfilSchema>;
 
+/** Edição de cliente pela central: inclui e-mail e senha opcional. */
+export const adminClienteSchema = perfilSchema.extend({
+  email: z.string().trim().toLowerCase().email('E-mail inválido'),
+  senha: z
+    .string()
+    .max(72)
+    .optional()
+    .or(z.literal(''))
+    .refine((valor) => !valor || valor.length >= 8, {
+      message: 'A senha deve ter ao menos 8 caracteres',
+    }),
+});
+export type AdminClienteInput = z.infer<typeof adminClienteSchema>;
+
 export const materialSchema = z.object({
   id: z.string().optional(),
   codigo: z
@@ -139,3 +153,31 @@ export const mensagemSchema = z.object({
   texto: z.string().trim().min(1, 'Escreva uma mensagem').max(2000),
 });
 export type MensagemInput = z.infer<typeof mensagemSchema>;
+
+export const produtoMdfSchema = z.object({
+  codigo: z
+    .number({ invalid_type_error: 'Código do material deve ser numérico' })
+    .int('Use um código inteiro')
+    .min(1)
+    .max(99999, 'O Corte Certo aceita códigos de material até 99999')
+    .optional(),
+  nome: z.string().trim().min(2, 'Informe o nome do MDF').max(80),
+  cor: z.string().trim().min(1, 'Informe a cor').max(60),
+  espessura: z.number().positive('Espessura deve ser maior que zero').max(100),
+  largura: z.number().positive('Informe a largura da chapa').max(LIMITES.chapaMaxima),
+  comprimento: z.number().positive('Informe o comprimento da chapa').max(LIMITES.chapaMaxima),
+  ativo: z.boolean().optional(),
+});
+export type ProdutoMdfInput = z.infer<typeof produtoMdfSchema>;
+
+export const configuracaoCorteSchema = z.object({
+  serraMm: z
+    .number({ invalid_type_error: 'Espessura da serra deve ser numérica' })
+    .min(0, 'A espessura da serra não pode ser negativa')
+    .max(20, 'Espessura da serra acima de 20 mm não é aceita'),
+  valorCorte: z
+    .number({ invalid_type_error: 'Valor do corte deve ser numérico' })
+    .min(0, 'O valor do corte não pode ser negativo')
+    .max(10_000, 'Valor do corte acima do limite'),
+});
+export type ConfiguracaoCorteInput = z.infer<typeof configuracaoCorteSchema>;

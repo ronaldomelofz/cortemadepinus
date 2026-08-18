@@ -3,6 +3,7 @@ import {
   fitaPecaMl,
   APROVEITAMENTO_ESTIMADO,
   arredondar,
+  otimizarPlanos,
   type Pedido,
   type Veio,
 } from '@cortemadepinus/shared';
@@ -73,6 +74,23 @@ export function materialVazio(codigo: number): MaterialForm {
   };
 }
 
+export function materialDeProduto(
+  produto: { codigo: number; nome: string; cor: string; espessura: number; largura: number; comprimento: number },
+  chave?: string,
+): MaterialForm {
+  return {
+    chave: chave ?? novaChave(),
+    codigo: String(produto.codigo),
+    descricao: produto.nome,
+    espessura: String(produto.espessura),
+    cor: produto.cor,
+    chapaLargura: String(produto.comprimento),
+    chapaAltura: String(produto.largura),
+    fornecidoPeloCliente: false,
+    quantidadeChapas: '',
+  };
+}
+
 export function pecaVazia(codigo: number, materialCodigo: string): PecaForm {
   return {
     chave: novaChave(),
@@ -88,6 +106,45 @@ export function pecaVazia(codigo: number, materialCodigo: string): PecaForm {
     fitaL1: false,
     fitaL2: false,
     observacao: '',
+  };
+}
+
+export function rotuloMaterial(material: MaterialForm): string {
+  const partes = [material.descricao || `cód. ${material.codigo}`];
+  if (material.cor.trim()) partes.push(material.cor);
+  if (material.espessura.trim()) partes.push(`${material.espessura} mm`);
+  if (material.chapaLargura.trim() && material.chapaAltura.trim()) {
+    partes.push(`${material.chapaLargura}×${material.chapaAltura}`);
+  }
+  return partes.join(' · ');
+}
+
+/** Preenche o pedido com todos os MDFs cadastrados pela central. */
+export function aplicarCatalogo(
+  formulario: PedidoForm,
+  produtos: Array<{
+    codigo: number;
+    nome: string;
+    cor: string;
+    espessura: number;
+    largura: number;
+    comprimento: number;
+  }>,
+): PedidoForm {
+  if (produtos.length === 0) return formulario;
+  const catalogo = produtos.map((produto) => materialDeProduto(produto));
+  const porCodigo = new Map(catalogo.map((material) => [material.codigo, material]));
+  formulario.materiais.forEach((material) => {
+    if (!porCodigo.has(material.codigo)) porCodigo.set(material.codigo, material);
+  });
+  const materiais = [...porCodigo.values()];
+  const padrao = materiais[0]?.codigo ?? '';
+  return {
+    ...formulario,
+    materiais,
+    pecas: formulario.pecas.map((peca) =>
+      porCodigo.has(peca.materialCodigo) ? peca : { ...peca, materialCodigo: padrao },
+    ),
   };
 }
 
@@ -147,12 +204,18 @@ const numero = (texto: string): number => {
 
 /** Monta o corpo enviado para a API a partir do estado do formulario. */
 export function formularioParaPayload(formulario: PedidoForm) {
+  const usados = new Set(formulario.pecas.map((peca) => peca.materialCodigo));
+  const materiais =
+    formulario.materiais.filter((material) => usados.has(material.codigo)).length > 0
+      ? formulario.materiais.filter((material) => usados.has(material.codigo))
+      : formulario.materiais.slice(0, 1);
+
   return {
     titulo: formulario.titulo.trim(),
     ambiente: formulario.ambiente.trim(),
     observacoes: formulario.observacoes.trim(),
     prazoDesejado: formulario.prazoDesejado.trim(),
-    materiais: formulario.materiais.map((material) => ({
+    materiais: materiais.map((material) => ({
       codigo: numero(material.codigo),
       descricao: material.descricao.trim(),
       espessura: numero(material.espessura),
@@ -225,18 +288,73 @@ export function resumirFormulario(formulario: PedidoForm): ResumoForm {
     };
   });
 
+  const utilizados = porMaterial.filter((material) => material.totalPecas > 0);
+
   return {
     totalItens: formulario.pecas.length,
-    totalPecas: porMaterial.reduce((total, m) => total + m.totalPecas, 0),
+    totalPecas: utilizados.reduce((total, m) => total + m.totalPecas, 0),
     areaTotalM2: arredondar(
-      porMaterial.reduce((total, m) => total + m.areaM2, 0),
+      utilizados.reduce((total, m) => total + m.areaM2, 0),
       3,
     ),
     fitaMl: arredondar(
-      porMaterial.reduce((total, m) => total + m.fitaMl, 0),
+      utilizados.reduce((total, m) => total + m.fitaMl, 0),
       2,
     ),
-    chapasEstimadas: porMaterial.reduce((total, m) => total + m.chapasEstimadas, 0),
-    porMaterial,
+    chapasEstimadas: utilizados.reduce((total, m) => total + m.chapasEstimadas, 0),
+    porMaterial: utilizados,
+  };
+}
+
+/** Contagem de cortes do plano e valor estimado com o preço definido na central. */
+export function resumirCortes(
+  formulario: PedidoForm,
+  opcoes: { serraMm: number; valorCorte: number },
+): { totalCortes: number; valorEstimado: number; valorUnitario: number } {
+  const chapas = formulario.materiais
+    .map((m) => ({
+      codigo: numero(m.codigo),
+      descricao: m.descricao || `Material ${m.codigo}`,
+      largura: numero(m.chapaLargura),
+      altura: numero(m.chapaAltura),
+    }))
+    .filter((m) => m.codigo > 0 && m.largura > 0 && m.altura > 0);
+
+  const porMaterial = new Map<number, Array<{
+    codigo: number;
+    descricao: string;
+    largura: number;
+    altura: number;
+    quantidade: number;
+    veio: Veio;
+  }>>();
+
+  formulario.pecas.forEach((peca) => {
+    const material = numero(peca.materialCodigo);
+    const largura = numero(peca.largura) || 0;
+    const altura = numero(peca.altura) || 0;
+    const quantidade = numero(peca.quantidade) || 0;
+    if (!material || largura <= 0 || altura <= 0 || quantidade <= 0) return;
+    const lista = porMaterial.get(material) ?? [];
+    lista.push({
+      codigo: numero(peca.codigo) || lista.length + 1,
+      descricao: peca.descricao || `Peça ${peca.codigo}`,
+      largura,
+      altura,
+      quantidade,
+      veio: peca.veio,
+    });
+    porMaterial.set(material, lista);
+  });
+
+  const resultado = otimizarPlanos(chapas, porMaterial, {
+    serraMm: opcoes.serraMm,
+    apararBordas: true,
+  });
+
+  return {
+    totalCortes: resultado.totalCortes,
+    valorEstimado: arredondar(resultado.totalCortes * opcoes.valorCorte, 2),
+    valorUnitario: opcoes.valorCorte,
   };
 }
