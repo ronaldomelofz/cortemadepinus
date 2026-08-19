@@ -60,6 +60,26 @@ body {
   background: #fff;
 }
 
+.pagina-a4-paisagem {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: 297mm;
+  min-height: 210mm;
+  max-width: 100%;
+  padding: 8mm 10mm;
+  background: #fff;
+}
+
+.pagina-a4-retrato {
+  box-sizing: border-box;
+  width: 210mm;
+  min-height: 297mm;
+  max-width: 100%;
+  padding: 10mm;
+  background: #fff;
+}
+
 @media print {
   .nao-imprimir {
     display: none !important;
@@ -72,5 +92,30 @@ body {
 
   body {
     background: #fff !important;
+  }
+
+  .pagina-a4-paisagem {
+    width: 297mm;
+    height: 210mm;
+    min-height: 210mm;
+    max-height: 210mm;
+    overflow: hidden;
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .pagina-a4-paisagem:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+
+  .pagina-a4-retrato {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 10mm;
+  }
+
+  .lista-pecas-numeradas {
+    font-size: 10px;
   }
 }

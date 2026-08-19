@@ -20,7 +20,7 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
-      - name: Testes da regra de negócio (layout Corte Certo)
+      - name: Testes da regra de negócio (layout Corte MadePinus)
         run: npm test --workspace @cortemadepinus/shared
 
       - name: Build do pacote compartilhado

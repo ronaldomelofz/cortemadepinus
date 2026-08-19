@@ -129,6 +129,9 @@ export function DetalhePedido() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">
+              Número do Pedido
+            </span>
             <span className="rounded bg-stone-100 px-2 py-0.5 text-xs font-bold tabular-nums text-stone-600">
               #{String(pedido.numero).padStart(5, '0')}
             </span>
@@ -216,12 +219,12 @@ export function DetalhePedido() {
       <section className="cartao p-5">
         <h2 className="mb-3 text-base font-bold text-stone-900">Arquivos para a produção</h2>
         <p className="mb-4 text-sm text-stone-500">
-          O CSV e o TXT seguem o layout oficial de importação do Corte Certo. A planilha de produção traz veio
+          O CSV e o TXT seguem o layout de importação do Corte MadePinus. A planilha de produção traz veio
           e material por extenso.
         </p>
         <div className="flex flex-wrap gap-2">
-          <BotaoDownload pedidoId={pedido.id} formato="csv" rotulo="CSV Corte Certo" />
-          <BotaoDownload pedidoId={pedido.id} formato="txt" rotulo="TXT Corte Certo (TAB)" />
+          <BotaoDownload pedidoId={pedido.id} formato="csv" rotulo="CSV Corte MadePinus" />
+          <BotaoDownload pedidoId={pedido.id} formato="txt" rotulo="TXT Corte MadePinus (TAB)" />
           <BotaoDownload pedidoId={pedido.id} formato="producao" rotulo="Planilha de produção" />
         </div>
       </section>

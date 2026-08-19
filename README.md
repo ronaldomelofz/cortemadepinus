@@ -2,7 +2,7 @@
 
 Plataforma web onde os clientes da MadePinus enviam **planos de corte (medidas)** para a central de
 serviços. As peças são lançadas na tela, coladas do Excel ou importadas de um arquivo, e a central
-baixa o arquivo **já no layout oficial do software Corte Certo**, pronto para otimizar e cortar na
+baixa o arquivo **já no layout do Corte MadePinus**, pronto para otimizar e cortar na
 seccionadora.
 
 - Site (front-end): <https://cortemadepinus.netlify.app>
@@ -16,7 +16,7 @@ seccionadora.
 1. [Como funciona](#como-funciona)
 2. [Arquitetura](#arquitetura)
 3. [Stack](#stack-tudo-open-source)
-4. [Formato Corte Certo](#formato-corte-certo)
+4. [Formato Corte MadePinus](#formato-corte-madepinus)
 5. [Rodando na sua máquina](#rodando-na-sua-máquina)
 6. [24/7 no Windows](#247-no-windows-sem-docker-e-sem-custo)
 7. [Servidor local com Docker](#servidor-local-com-docker)
@@ -35,7 +35,7 @@ seccionadora.
 | 2. Materiais | Cliente | Informa cada chapa: código, descrição, espessura, cor e dimensões. |
 | 3. Peças | Cliente | Digita as medidas, cola do Excel (Ctrl+V na tabela) ou importa CSV/TXT. |
 | 4. Envio | Cliente | O pedido sai de *Rascunho* para *Enviado* e trava a edição. |
-| 5. Análise | Central | Baixa o CSV Corte Certo, otimiza, informa o orçamento. |
+| 5. Análise | Central | Baixa o CSV Corte MadePinus, otimiza, informa o orçamento. |
 | 6. Produção | Central | Atualiza o status até *Pronto para retirada* / *Entregue*. |
 
 Os status disponíveis são: `RASCUNHO → ENVIADO → EM_ANALISE → ORCAMENTO_ENVIADO → APROVADO →
@@ -81,7 +81,7 @@ apps/
   api/       API Express + Prisma (roda no servidor local)
   web/       SPA React publicada no Netlify
 packages/
-  shared/    Tipos, validações Zod, cálculos e leitura/escrita Corte Certo
+  shared/    Tipos, validações Zod, cálculos e leitura/escrita Corte MadePinus
 docker-compose.yml
 netlify.toml
 ```
@@ -89,9 +89,9 @@ netlify.toml
 O pacote `shared` é o coração da regra de negócio: ele é usado tanto pelo navegador (validação
 instantânea enquanto o cliente digita) quanto pela API (validação definitiva antes de gravar).
 
-## Formato Corte Certo
+## Formato Corte MadePinus
 
-O Corte Certo importa listas de peças em **CSV com seis campos por linha, separados por vírgula**:
+O Corte MadePinus importa listas de peças em **CSV com seis campos por linha, separados por vírgula**:
 
 | Ordem | Campo | Tipo | Exemplo |
 | --- | --- | --- | --- |
@@ -108,14 +108,14 @@ O Corte Certo importa listas de peças em **CSV com seis campos por linha, separ
 3,6,397,700,99001,Porta
 ```
 
-No Corte Certo: **Projetos → Importar → escolher o arquivo → Continuar**.
+No Corte MadePinus, o arquivo é gerado automaticamente no pedido.
 
 A plataforma gera três arquivos por pedido:
 
 | Arquivo | Uso |
 | --- | --- |
-| `PEDxxxxx-projeto.cortecerto.csv` | Importação direta no Corte Certo (6 campos, vírgula). |
-| `PEDxxxxx-projeto.cortecerto.txt` | Mesmo conteúdo em TAB, com 7º campo livre (`FITA C1+L2 | VEIO LARGURA`). |
+| `PEDxxxxx-projeto.madepinus.csv` | Lista de peças do Corte MadePinus (6 campos, vírgula). |
+| `PEDxxxxx-projeto.madepinus.txt` | Mesmo conteúdo em TAB, com 7º campo livre (`FITA C1+L2 | VEIO LARGURA`). |
 | `PEDxxxxx-projeto.producao.csv` | Planilha para o chão de fábrica: fita de borda, veio, cor, espessura e áreas. |
 
 Descrições são normalizadas automaticamente (sem acento, sem vírgula, até 60 caracteres) para não
@@ -123,7 +123,7 @@ quebrar a leitura do arquivo.
 
 **Importação**: a plataforma aceita CSV, TXT e colagem direta do Excel. O separador (`,`, `;` ou TAB)
 é detectado sozinho, linhas de comentário iniciadas por `/` ou `#` são ignoradas — como nos arquivos
-gerados pelo próprio Corte Certo — e o cabeçalho da planilha também.
+gerados pelo próprio Corte MadePinus — e o cabeçalho da planilha também.
 
 ### Veio da peça
 
@@ -179,7 +179,7 @@ npm run dev
 - API: <http://localhost:4000> (health check em `/saude`)
 - Site: <http://localhost:5173>
 
-Testes da regra de negócio (layout Corte Certo, importação, cálculos):
+Testes da regra de negócio (layout Corte MadePinus, importação, cálculos):
 
 ```bash
 npm test -w @cortemadepinus/shared
@@ -285,7 +285,7 @@ Autenticação por **Bearer token** (JWT). Downloads aceitam `?token=` na query 
 | `POST` | `/api/pedidos/:id/mensagens` | Mensagem no pedido. |
 | `POST` | `/api/pedidos/:id/anexos` | Upload (até 10 arquivos, 20 MB cada). |
 | `GET` | `/api/pedidos/:id/anexos/:anexoId` | Download de anexo. |
-| `GET` | `/api/pedidos/:id/exportar/csv` | CSV no layout Corte Certo. |
+| `GET` | `/api/pedidos/:id/exportar/csv` | CSV no layout Corte MadePinus. |
 | `GET` | `/api/pedidos/:id/exportar/txt` | TXT (TAB) com observações. |
 | `GET` | `/api/pedidos/:id/exportar/producao` | Planilha de produção. |
 | `GET` | `/api/admin/painel` | Indicadores da central. |

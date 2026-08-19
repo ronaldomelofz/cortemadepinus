@@ -251,7 +251,7 @@ export function CadastrosAdmin() {
             ajuda="Lado menor da chapa. Padrão de mercado: 1840 mm."
           />
           <Campo
-            rotulo="Código (Corte Certo)"
+            rotulo="Código (Corte MadePinus)"
             inputMode="numeric"
             value={form.codigo}
             onChange={(e) => setForm((a) => ({ ...a, codigo: e.target.value }))}

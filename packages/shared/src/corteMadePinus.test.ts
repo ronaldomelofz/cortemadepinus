@@ -3,12 +3,12 @@ import { test } from 'node:test';
 import { calcularResumo } from './calc';
 import {
   detectarSeparador,
-  exportarCsvCorteCerto,
-  exportarTxtCorteCerto,
+  exportarCsvCorteMadePinus,
+  exportarTxtCorteMadePinus,
   importarPecas,
   nomeArquivo,
   sanitizarDescricao,
-} from './corteCerto';
+} from './corteMadePinus';
 import type { Material, Peca, Pedido } from './types';
 
 function material(codigo: number, id: string): Material {
@@ -62,8 +62,8 @@ const pedido: Pick<Pedido, 'materiais' | 'pecas'> = {
   ],
 };
 
-test('CSV segue o layout de seis campos do Corte Certo', () => {
-  const linhas = exportarCsvCorteCerto(pedido).trim().split('\r\n');
+test('CSV segue o layout de seis campos do Corte MadePinus', () => {
+  const linhas = exportarCsvCorteMadePinus(pedido).trim().split('\r\n');
   assert.equal(linhas.length, 2);
   assert.equal(linhas[0], '1,4,700,350,99000,Lateral');
   assert.equal(linhas[1].split(',').length, 6, 'a descrição não pode introduzir campos extras');
@@ -71,7 +71,7 @@ test('CSV segue o layout de seis campos do Corte Certo', () => {
 });
 
 test('TXT usa TAB e acrescenta o campo livre de observação', () => {
-  const linhas = exportarTxtCorteCerto(pedido).trim().split('\r\n');
+  const linhas = exportarTxtCorteMadePinus(pedido).trim().split('\r\n');
   const campos = linhas[1].split('\t');
   assert.equal(campos.length, 7);
   assert.equal(campos[6], 'VEIO LARGURA');
@@ -83,7 +83,7 @@ test('descrições perdem acento e separadores', () => {
 
 test('importação reconhece o CSV oficial', () => {
   const conteudo = [
-    '/ arquivo gerado pelo Corte Certo',
+    '/ arquivo gerado pelo Corte MadePinus',
     '1,50,214,124,99000,Peca1',
     '2,40,315,121,99000,Peca2',
   ].join('\n');
@@ -130,7 +130,7 @@ test('resumo calcula área, fita e chapas estimadas', () => {
 
 test('nome do arquivo usa o número do pedido', () => {
   assert.equal(
-    nomeArquivo({ numero: 42, titulo: 'Cozinha Apartamento 302' }, 'cortecerto.csv'),
-    'PED00042-cozinha-apartamento-302.cortecerto.csv',
+    nomeArquivo({ numero: 42, titulo: 'Cozinha Apartamento 302' }, 'madepinus.csv'),
+    'PED00042-cozinha-apartamento-302.madepinus.csv',
   );
 });

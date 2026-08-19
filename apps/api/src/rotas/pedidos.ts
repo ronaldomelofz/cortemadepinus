@@ -2,9 +2,9 @@ import { Router } from 'express';
 import { z } from 'zod';
 import {
   calcularResumo,
-  exportarCsvCorteCerto,
+  exportarCsvCorteMadePinus,
   exportarRelatorioProducaoCsv,
-  exportarTxtCorteCerto,
+  exportarTxtCorteMadePinus,
   mensagemSchema,
   nomeArquivo,
 } from '@cortemadepinus/shared';
@@ -217,12 +217,12 @@ const FORMATOS = {
   csv: {
     extensao: 'csv',
     tipo: 'text/csv; charset=utf-8',
-    gerar: exportarCsvCorteCerto,
+    gerar: exportarCsvCorteMadePinus,
   },
   txt: {
     extensao: 'txt',
     tipo: 'text/plain; charset=utf-8',
-    gerar: exportarTxtCorteCerto,
+    gerar: exportarTxtCorteMadePinus,
   },
   producao: {
     extensao: 'csv',
@@ -239,7 +239,7 @@ rotasPedidos.get(
 
     const registro = await buscarPedidoAutorizado(req.params.id, req.usuario!);
     const pedido = mapearPedido(registro);
-    const sufixo = req.params.formato === 'producao' ? 'producao' : 'cortecerto';
+    const sufixo = req.params.formato === 'producao' ? 'producao' : 'madepinus';
     const nome = nomeArquivo(pedido, `${sufixo}.${formato.extensao}`);
 
     // BOM para que o Excel em pt-BR reconheca os acentos do relatorio.

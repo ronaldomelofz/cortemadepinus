@@ -1,7 +1,7 @@
 /**
- * Geracao e leitura dos arquivos no layout do software Corte Certo.
+ * Geracao e leitura dos arquivos no layout do Corte MadePinus.
  *
- * Layout oficial do CSV (6 campos separados por virgula, um registro por linha):
+ * Layout do CSV (6 campos separados por virgula, um registro por linha):
  *   1) Codigo da peca      numerico
  *   2) Quantidade          numerico
  *   3) Largura da peca     numerico (mm)
@@ -9,14 +9,14 @@
  *   5) Material da peca    numerico
  *   6) Descricao da peca   alfanumerico
  *
- * Layout oficial do TXT (7 campos separados por TAB): os seis acima e mais
+ * Layout do TXT (7 campos separados por TAB): os seis acima e mais
  * um campo livre de observacao/operacao.
  */
 
 import type { Material, Peca, Pedido, Veio } from './types';
 import { RECURSOS } from './recursos';
 
-export interface LinhaCorteCerto {
+export interface LinhaCorteMadePinus {
   codigo: number;
   quantidade: number;
   largura: number;
@@ -53,10 +53,10 @@ function mapaMateriais(materiais: Material[]): Map<string, Material> {
 }
 
 /**
- * Converte as pecas do pedido para as linhas do layout Corte Certo.
+ * Converte as pecas do pedido para as linhas do layout Corte MadePinus.
  * A largura sempre acompanha o sentido do veio quando ele e informado.
  */
-export function montarLinhas(pedido: Pick<Pedido, 'materiais' | 'pecas'>): LinhaCorteCerto[] {
+export function montarLinhas(pedido: Pick<Pedido, 'materiais' | 'pecas'>): LinhaCorteMadePinus[] {
   const materiais = mapaMateriais(pedido.materiais);
   return ordenarPecas(pedido.pecas).map((peca) => {
     const material = materiais.get(peca.materialId);
@@ -89,8 +89,8 @@ export function montarObservacao(peca: Peca): string {
   return sanitizarDescricao(partes.join(' | '));
 }
 
-/** Arquivo CSV pronto para "Projetos > Importar" no Corte Certo. */
-export function exportarCsvCorteCerto(pedido: Pick<Pedido, 'materiais' | 'pecas'>): string {
+/** Arquivo CSV no layout de seis campos do Corte MadePinus. */
+export function exportarCsvCorteMadePinus(pedido: Pick<Pedido, 'materiais' | 'pecas'>): string {
   return montarLinhas(pedido)
     .map((l) =>
       [
@@ -107,7 +107,7 @@ export function exportarCsvCorteCerto(pedido: Pick<Pedido, 'materiais' | 'pecas'
 }
 
 /** Arquivo TXT (TAB) com o setimo campo de observacao/operacao. */
-export function exportarTxtCorteCerto(pedido: Pick<Pedido, 'materiais' | 'pecas'>): string {
+export function exportarTxtCorteMadePinus(pedido: Pick<Pedido, 'materiais' | 'pecas'>): string {
   return montarLinhas(pedido)
     .map((l) =>
       [
@@ -217,7 +217,7 @@ export function detectarSeparador(conteudo: string): string {
       melhor = sep;
     }
   }
-  // Sem nenhum separador convincente, assume o CSV padrao do Corte Certo.
+  // Sem nenhum separador convincente, assume o CSV padrao do Corte MadePinus.
   return melhorPontuacao >= 2 ? melhor : ',';
 }
 
@@ -240,9 +240,9 @@ function ehCabecalho(campos: string[]): boolean {
 }
 
 /**
- * Le um arquivo no layout Corte Certo (CSV/TXT) ou uma colagem de planilha.
+ * Le um arquivo no layout Corte MadePinus (CSV/TXT) ou uma colagem de planilha.
  * Linhas iniciadas por "/" ou "#" sao tratadas como comentario, conforme o
- * padrao usado nos arquivos gerados pelo proprio Corte Certo.
+ * padrao dos arquivos gerados pela propria plataforma.
  */
 export function importarPecas(
   conteudo: string,

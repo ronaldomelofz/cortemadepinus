@@ -3,7 +3,7 @@ import type { Material, Peca, Pedido, ResumoPedido } from './types';
 /**
  * Aproveitamento medio esperado numa seccionadora com chapas padrao.
  * Serve apenas para a estimativa exibida ao cliente; o numero real vem da
- * otimizacao feita no Corte Certo.
+ * otimizacao feita no Corte MadePinus.
  */
 export const APROVEITAMENTO_ESTIMADO = 0.85;
 

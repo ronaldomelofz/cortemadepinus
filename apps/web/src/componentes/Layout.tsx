@@ -123,7 +123,7 @@ export function LayoutApp() {
       </main>
 
       <footer className="mx-auto max-w-7xl px-4 pb-8 pt-4 text-xs text-stone-400">
-        MadePinus · Planos de corte no padrão Corte Certo · Corte em seccionadora
+        MadePinus · Planos de corte no padrão Corte MadePinus · Corte em seccionadora
       </footer>
     </div>
   );

@@ -43,7 +43,7 @@ export function ImportarPecas({ materialPadrao, aberto, aoFechar, aoConfirmar }:
           <div>
             <h2 className="text-lg font-bold text-stone-900">Importar lista de peças</h2>
             <p className="mt-1 text-sm text-stone-500">
-              Aceita arquivos CSV/TXT no layout do Corte Certo ou dados copiados do Excel.
+              Aceita arquivos CSV/TXT no layout do Corte MadePinus ou dados copiados do Excel.
             </p>
           </div>
           <button

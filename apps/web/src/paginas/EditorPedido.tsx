@@ -17,7 +17,7 @@ import {
 import { ImportarPecas } from '../componentes/ImportarPecas';
 import { TabelaPecas } from '../componentes/TabelaPecas';
 import { Aviso, Botao, Carregando, Metrica } from '../componentes/ui';
-import { VisualizacaoPlano } from '../componentes/VisualizacaoPlano';
+import { VisualizacaoPlano, type AlteracaoPecaNoPlano } from '../componentes/VisualizacaoPlano';
 import { api, ErroApi } from '../lib/api';
 import {
   aplicarCatalogo,
@@ -115,6 +115,43 @@ export function EditorPedido() {
       ...atual,
       pecas: atual.pecas.map((peca, i) => (i === indice ? { ...peca, [campo]: valor } : peca)),
     }));
+  }
+
+  function alterarMedidasPecaNoPlano(alteracao: AlteracaoPecaNoPlano): number {
+    let codigoFinal = alteracao.codigo;
+    setFormulario((atual) => {
+      const indice = atual.pecas.findIndex((peca) => Number(peca.codigo) === alteracao.codigo);
+      if (indice < 0) return atual;
+      const peca = atual.pecas[indice];
+      const quantidade = Math.max(1, Math.round(Number(String(peca.quantidade).replace(',', '.')) || 1));
+      const larguraAtual = Number(String(peca.largura).replace(',', '.'));
+      const alturaAtual = Number(String(peca.altura).replace(',', '.'));
+      if (larguraAtual === alteracao.largura && alturaAtual === alteracao.altura) return atual;
+      if (quantidade <= 1) {
+        return {
+          ...atual,
+          pecas: atual.pecas.map((item, i) =>
+            i === indice
+              ? { ...item, largura: String(alteracao.largura), altura: String(alteracao.altura) }
+              : item,
+          ),
+        };
+      }
+      const pecas = atual.pecas.map((item, i) =>
+        i === indice ? { ...item, quantidade: String(quantidade - 1) } : item,
+      );
+      codigoFinal = proximoCodigo(pecas);
+      pecas.splice(indice + 1, 0, {
+        ...peca,
+        chave: novaChave(),
+        codigo: String(codigoFinal),
+        quantidade: '1',
+        largura: String(alteracao.largura),
+        altura: String(alteracao.altura),
+      });
+      return { ...atual, pecas };
+    });
+    return codigoFinal;
   }
 
   function proximoCodigo(pecas: PecaForm[]): number {
@@ -437,7 +474,7 @@ export function EditorPedido() {
 
         <p className="mt-3 text-xs text-stone-500">
           A estimativa de chapas considera 85% de aproveitamento. O desenho abaixo é uma prévia para
-          conferência; o número exato sai da otimização no Corte Certo pela central.
+          conferência; o número exato sai da otimização do Corte MadePinus na central.
         </p>
       </section>
 
@@ -447,6 +484,8 @@ export function EditorPedido() {
           pecas={formulario.pecas}
           serraMm={configCorte.serraMm}
           valorCorte={configCorte.valorCorte}
+          editavel={podeEditar}
+          aoAlterarMedidas={podeEditar ? alterarMedidasPecaNoPlano : undefined}
         />
       </section>
       </div>

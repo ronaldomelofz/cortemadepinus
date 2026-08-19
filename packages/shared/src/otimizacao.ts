@@ -63,6 +63,8 @@ export interface ChapaDoPlano {
   /** COMPRIMENTO = entra pelo lado X (ex.: 2750); LARGURA = entra pelo lado Y (ex.: 1840). */
   sentidoEntrada: SentidoEntrada;
   sentidoEntradaMm: number;
+  /** Se definido, os cortes usam este sentido em vez da detecção automática. */
+  sentidoForcado?: SentidoEntrada;
   pecas: PecaNoPlano[];
   cortes: CorteNoPlano[];
   areaUsadaMm2: number;
@@ -189,19 +191,33 @@ function dividirGuillotine(livre: RetanguloLivre, w: number, h: number, serra: n
 function melhorEncaixe(
   livres: RetanguloLivre[],
   peca: Unidade,
+  serra: number,
 ): { indice: number; w: number; h: number; girada: boolean; y: number; x: number } | null {
-  let melhor: { indice: number; w: number; h: number; girada: boolean; y: number; x: number } | null = null;
+  let melhor: {
+    indice: number;
+    w: number;
+    h: number;
+    girada: boolean;
+    y: number;
+    x: number;
+    score: number;
+  } | null = null;
   for (let indice = 0; indice < livres.length; indice += 1) {
     const livre = livres[indice];
-    const opcoes = orientacoes(livre, peca);
-    if (opcoes.length === 0) continue;
-    const escolhida = opcoes[0];
-    if (
-      !melhor ||
-      livre.y < melhor.y - EPS ||
-      (Math.abs(livre.y - melhor.y) <= EPS && livre.x < melhor.x - EPS)
-    ) {
-      melhor = { indice, w: escolhida.w, h: escolhida.h, girada: escolhida.girada, y: livre.y, x: livre.x };
+    for (const opcao of orientacoes(livre, peca)) {
+      const retalhos = dividirGuillotine(livre, opcao.w, opcao.h, serra);
+      const score = scoreRetalhos(retalhos) - livre.y * 10 - livre.x * 0.001;
+      if (!melhor || score > melhor.score) {
+        melhor = {
+          indice,
+          w: opcao.w,
+          h: opcao.h,
+          girada: opcao.girada,
+          y: livre.y,
+          x: livre.x,
+          score,
+        };
+      }
     }
   }
   return melhor;
@@ -219,7 +235,7 @@ function empacotarGuillotine(
   const restantes: Unidade[] = [];
 
   for (const unidade of unidades) {
-    const encaixe = melhorEncaixe(livres, unidade);
+    const encaixe = melhorEncaixe(livres, unidade, serra);
     if (!encaixe) {
       restantes.push(unidade);
       continue;
@@ -446,15 +462,35 @@ function maiorRetalhoMm2(chapa: ChapaParaOtimizar, pecas: PecaNoPlano[]): number
   return Math.max(aDireita, abaixo);
 }
 
+/**
+ * Na seccionadora o corte longo atravessa a chapa inteira. A sobra realmente
+ * reaproveitável é o que resta DEPOIS dessas ripas, principalmente o retalho
+ * que ainda conserva o lado maior da chapa (ex.: 2750 mm).
+ */
+function sobraAproveitavelSeccionadora(chapa: ChapaParaOtimizar, pecas: PecaNoPlano[]): number {
+  if (pecas.length === 0) return chapa.largura * chapa.altura;
+  const { maxX, maxY } = caixaPecas(pecas);
+  const abaixo = Math.max(0, chapa.altura - maxY) * chapa.largura;
+  const direita = Math.max(0, chapa.largura - maxX) * chapa.altura;
+  const paisagem = chapa.largura >= chapa.altura;
+  const sobraLonga = paisagem ? abaixo : direita;
+  const sobraCurta = paisagem ? direita : abaixo;
+  const menorLadoLonga = paisagem ? Math.max(0, chapa.altura - maxY) : Math.max(0, chapa.largura - maxX);
+  const ladoLongo = Math.max(chapa.largura, chapa.altura);
+  return sobraLonga * 2 + menorLadoLonga * ladoLongo + sobraCurta * 0.2;
+}
+
 function compararColocacao(chapa: ChapaParaOtimizar, a: Colocacao, b: Colocacao): number {
   const pecasA = a.pecas.length;
   const pecasB = b.pecas.length;
   if (pecasA !== pecasB) return pecasB - pecasA;
+  const scoreA = sobraAproveitavelSeccionadora(chapa, a.pecas);
+  const scoreB = sobraAproveitavelSeccionadora(chapa, b.pecas);
+  if (Math.abs(scoreB - scoreA) > 1) return scoreB - scoreA;
   const retalho = maiorRetalhoMm2(chapa, b.pecas) - maiorRetalhoMm2(chapa, a.pecas);
   if (Math.abs(retalho) > 1) return retalho;
   const caixaA = caixaPecas(a.pecas);
   const caixaB = caixaPecas(b.pecas);
-  // Em chapa deitada, prefere faixas no comprimento para entrar na seccionadora sem girar.
   if (chapa.largura >= chapa.altura && Math.abs(caixaA.maxY - caixaB.maxY) > 1) {
     return caixaA.maxY - caixaB.maxY;
   }
@@ -476,6 +512,85 @@ function empacotarChapa(
     empacotarGuillotine(unidades, chapa, serra, apararBordas),
   ];
   return candidatas.reduce((melhor, atual) => (compararColocacao(chapa, melhor, atual) > 0 ? atual : melhor));
+}
+
+/**
+ * Reempacota as peças já presentes na chapa, mantendo a orientação atual de cada uma
+ * e agrupando no canto/borda mais próximo de onde o usuário as deixou.
+ */
+export function organizarPecasNaChapa(
+  pecas: PecaNoPlano[],
+  chapa: Pick<ChapaParaOtimizar, 'largura' | 'altura'>,
+  serra: number,
+  apararBordas = true,
+): PecaNoPlano[] {
+  if (pecas.length === 0) return [];
+  const util = areaUtilChapa(chapa, serra, apararBordas);
+  const ancora = ancoraPeloMovimento(pecas, util);
+  const origem = pecas.map((peca, indice) => ({ peca, indice }));
+  origem.sort((a, b) => b.peca.largura * b.peca.altura - a.peca.largura * a.peca.altura);
+  const unidades: Unidade[] = origem.map(({ peca }) => ({
+    codigo: peca.codigo,
+    descricao: peca.descricao,
+    largura: peca.largura,
+    altura: peca.altura,
+    veio: 'COMPRIMENTO',
+  }));
+  const material: ChapaParaOtimizar = {
+    codigo: 0,
+    descricao: '',
+    largura: chapa.largura,
+    altura: chapa.altura,
+  };
+  let colocacao = empacotarFaixas(unidades, material, serra, ancora.faixasVerticais, apararBordas);
+  if (colocacao.restantes.length > 0) {
+    colocacao = empacotarChapa(unidades, material, serra, apararBordas);
+  }
+  if (colocacao.restantes.length > 0 || colocacao.pecas.length !== pecas.length) return pecas;
+
+  const fila = [...origem];
+  const agrupadas = colocacao.pecas.map((colocada) => {
+    const pos = fila.findIndex(
+      (item) =>
+        item.peca.codigo === colocada.codigo &&
+        item.peca.largura === colocada.largura &&
+        item.peca.altura === colocada.altura,
+    );
+    const original = pos >= 0 ? fila.splice(pos, 1)[0].peca : colocada;
+    return { ...colocada, girada: original.girada };
+  });
+  return ancorarNoCanto(agrupadas, util, ancora);
+}
+
+function ancoraPeloMovimento(
+  pecas: PecaNoPlano[],
+  util: { x: number; y: number; w: number; h: number },
+): { direita: boolean; baixo: boolean; faixasVerticais: boolean } {
+  const cx = pecas.reduce((soma, peca) => soma + peca.x + peca.largura / 2, 0) / pecas.length;
+  const cy = pecas.reduce((soma, peca) => soma + peca.y + peca.altura / 2, 0) / pecas.length;
+  const minX = Math.min(...pecas.map((peca) => peca.x));
+  const minY = Math.min(...pecas.map((peca) => peca.y));
+  const spanX = Math.max(...pecas.map((peca) => peca.x + peca.largura)) - minX;
+  const spanY = Math.max(...pecas.map((peca) => peca.y + peca.altura)) - minY;
+  return {
+    direita: cx > util.x + util.w / 2,
+    baixo: cy > util.y + util.h / 2,
+    faixasVerticais: spanY >= spanX,
+  };
+}
+
+function ancorarNoCanto(
+  pecas: PecaNoPlano[],
+  util: { x: number; y: number; w: number; h: number },
+  ancora: { direita: boolean; baixo: boolean },
+): PecaNoPlano[] {
+  return pecas.map((peca) => {
+    const localX = peca.x - util.x;
+    const localY = peca.y - util.y;
+    const x = ancora.direita ? util.x + util.w - localX - peca.largura : peca.x;
+    const y = ancora.baixo ? util.y + util.h - localY - peca.altura : peca.y;
+    return { ...peca, x: Math.round(x), y: Math.round(y) };
+  });
 }
 
 function unicos(valores: number[]): number[] {
@@ -581,9 +696,9 @@ function gerarCortesSeccionadora(
   pecas: PecaNoPlano[],
   serra: number,
   apararBordas: boolean,
+  sentido: SentidoEntrada,
 ): CorteBruto[] {
   if (pecas.length === 0) return [];
-  const sentido = detectarSentidoEntrada(chapa, pecas);
   const longos: CorteBruto[] = [];
   const curtos: CorteBruto[] = [];
   const aparar = apararBordas && serra > EPS;
@@ -692,10 +807,11 @@ function gerarCortes(
   pecas: PecaNoPlano[],
   serra: number,
   apararBordas: boolean,
+  sentidoForcado?: SentidoEntrada,
 ): { cortes: CorteNoPlano[]; sentidoEntrada: SentidoEntrada; sentidoEntradaMm: number } {
-  const sentidoEntrada = detectarSentidoEntrada(chapa, pecas);
+  const sentidoEntrada = sentidoForcado ?? detectarSentidoEntrada(chapa, pecas);
   const sentidoEntradaMm = sentidoEntrada === 'COMPRIMENTO' ? chapa.largura : chapa.altura;
-  const cortes = gerarCortesSeccionadora(chapa, pecas, serra, apararBordas).map((corte, indice) => ({
+  const cortes = gerarCortesSeccionadora(chapa, pecas, serra, apararBordas, sentidoEntrada).map((corte, indice) => ({
     ordem: indice + 1,
     direcao: corte.direcao,
     fase: corte.fase,
@@ -707,16 +823,46 @@ function gerarCortes(
   return { cortes, sentidoEntrada, sentidoEntradaMm };
 }
 
+export function remontarChapaDoPlano(
+  chapa: Pick<ChapaDoPlano, 'indice' | 'materialCodigo' | 'materialDescricao' | 'chapaLargura' | 'chapaAltura'>,
+  pecas: PecaNoPlano[],
+  serra: number,
+  apararBordas = true,
+  sentidoForcado?: SentidoEntrada,
+): ChapaDoPlano {
+  const montada = montarChapa(
+    chapa.indice,
+    {
+      codigo: chapa.materialCodigo,
+      descricao: chapa.materialDescricao,
+      largura: chapa.chapaLargura,
+      altura: chapa.chapaAltura,
+    },
+    pecas,
+    serra,
+    apararBordas,
+    sentidoForcado,
+  );
+  return sentidoForcado ? { ...montada, sentidoForcado } : montada;
+}
+
 function montarChapa(
   indice: number,
   material: ChapaParaOtimizar,
   pecas: PecaNoPlano[],
   serra: number,
   apararBordas: boolean,
+  sentidoForcado?: SentidoEntrada,
 ): ChapaDoPlano {
   const areaUsada = pecas.reduce((total, p) => total + p.largura * p.altura, 0);
   const areaChapa = material.largura * material.altura;
-  const { cortes, sentidoEntrada, sentidoEntradaMm } = gerarCortes(material, pecas, serra, apararBordas);
+  const { cortes, sentidoEntrada, sentidoEntradaMm } = gerarCortes(
+    material,
+    pecas,
+    serra,
+    apararBordas,
+    sentidoForcado,
+  );
   return {
     indice,
     materialCodigo: material.codigo,
@@ -725,6 +871,7 @@ function montarChapa(
     chapaAltura: material.altura,
     sentidoEntrada,
     sentidoEntradaMm,
+    ...(sentidoForcado ? { sentidoForcado } : {}),
     pecas,
     cortes,
     areaUsadaMm2: areaUsada,

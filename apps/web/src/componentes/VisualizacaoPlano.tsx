@@ -1,14 +1,21 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import {
+  areaUtilChapa,
   formatarM2,
   formatarMoeda,
+  organizarPecasNaChapa,
   otimizarPlanos,
+  remontarChapaDoPlano,
   SERRA_PADRAO_MM,
+  VEIO_LABEL,
   type ChapaDoPlano,
-  type FaseCorte,
   type ItemParaOtimizar,
+  type PecaNoPlano,
   type ResultadoOtimizacao,
+  type SentidoEntrada,
+  type Veio,
 } from '@cortemadepinus/shared';
+import { Botao, Campo } from './ui';
 
 export interface MaterialVisual {
   codigo: number | string;
@@ -33,6 +40,72 @@ function numero(valor: number | string): number {
   if (typeof valor === 'number') return valor;
   const n = Number(String(valor).trim().replace(',', '.'));
   return Number.isFinite(n) ? n : 0;
+}
+
+const EPS_POS = 0.51;
+const PASSO_FINO_MM = 1;
+const PASSO_GROSSO_MM = 10;
+
+export type AlteracaoPecaNoPlano = {
+  codigo: number;
+  largura: number;
+  altura: number;
+};
+
+function veioDaPeca(pecas: PecaVisual[], codigo: number): Veio {
+  const peca = pecas.find((item) => numero(item.codigo) === codigo);
+  if (peca?.veio === 'COMPRIMENTO' || peca?.veio === 'LARGURA') return peca.veio;
+  return 'INDIFERENTE';
+}
+
+function retangulosConflitam(
+  a: Pick<PecaNoPlano, 'x' | 'y' | 'largura' | 'altura'>,
+  b: Pick<PecaNoPlano, 'x' | 'y' | 'largura' | 'altura'>,
+  serra: number,
+): boolean {
+  return (
+    a.x < b.x + b.largura + serra - EPS_POS &&
+    b.x < a.x + a.largura + serra - EPS_POS &&
+    a.y < b.y + b.altura + serra - EPS_POS &&
+    b.y < a.y + a.altura + serra - EPS_POS
+  );
+}
+
+function limitarNaAreaUtil(
+  x: number,
+  y: number,
+  largura: number,
+  altura: number,
+  util: { x: number; y: number; w: number; h: number },
+): { x: number; y: number } | null {
+  if (largura > util.w + EPS_POS || altura > util.h + EPS_POS) return null;
+  return {
+    x: Math.min(util.x + util.w - largura, Math.max(util.x, x)),
+    y: Math.min(util.y + util.h - altura, Math.max(util.y, y)),
+  };
+}
+
+function encaixarPeca(
+  tentativa: PecaNoPlano,
+  outras: PecaNoPlano[],
+  util: { x: number; y: number; w: number; h: number },
+  serra: number,
+): PecaNoPlano | null {
+  const limitada = limitarNaAreaUtil(tentativa.x, tentativa.y, tentativa.largura, tentativa.altura, util);
+  if (!limitada) return null;
+  const peca = { ...tentativa, x: Math.round(limitada.x), y: Math.round(limitada.y) };
+  if (outras.some((outra) => retangulosConflitam(peca, outra, serra))) return null;
+  return peca;
+}
+
+function pontoNoSvg(svg: SVGSVGElement, clientX: number, clientY: number): { x: number; y: number } {
+  const rect = svg.getBoundingClientRect();
+  const caixa = svg.viewBox.baseVal;
+  if (rect.width === 0 || rect.height === 0) return { x: 0, y: 0 };
+  return {
+    x: ((clientX - rect.left) / rect.width) * caixa.width + caixa.x,
+    y: ((clientY - rect.top) / rect.height) * caixa.height + caixa.y,
+  };
 }
 
 export function montarResultado(
@@ -71,35 +144,61 @@ export function montarResultado(
   return otimizarPlanos(chapas, porMaterial, { serraMm, apararBordas: true });
 }
 
-const FASE_CORTE_LABEL: Record<FaseCorte, string> = {
-  APARAR: 'Aparar',
-  LONGO: 'Longo',
-  CURTO: 'Curto',
-};
-
 export function VisualizacaoPlano({
   materiais,
   pecas,
   serraMm = SERRA_PADRAO_MM,
   valorCorte = 0,
   acoes,
+  editavel = false,
+  aoAlterarMedidas,
 }: {
   materiais: MaterialVisual[];
   pecas: PecaVisual[];
   serraMm?: number;
   valorCorte?: number;
   acoes?: ReactNode;
+  editavel?: boolean;
+  aoAlterarMedidas?: (alteracao: AlteracaoPecaNoPlano) => number;
 }) {
-  const resultado = useMemo(
+  const otimizado = useMemo(
     () => montarResultado(materiais, pecas, serraMm),
     [materiais, pecas, serraMm],
   );
+  const [chapasManuais, setChapasManuais] = useState<ChapaDoPlano[] | null>(null);
+  const [folha, setFolha] = useState(0);
+  const [selecao, setSelecao] = useState<{ folha: number; indice: number } | null>(null);
+  const [dialogoAberto, setDialogoAberto] = useState(false);
+  const [avisoLayout, setAvisoLayout] = useState<string | null>(null);
+  const ignorarChave = useRef<string | null>(null);
+
+  const chaveEntrada = useMemo(
+    () => JSON.stringify({ serraMm, materiais, pecas }),
+    [materiais, pecas, serraMm],
+  );
+
+  useEffect(() => {
+    if (ignorarChave.current === 'pending') {
+      ignorarChave.current = chaveEntrada;
+      return;
+    }
+    if (ignorarChave.current === chaveEntrada) return;
+    ignorarChave.current = null;
+    setChapasManuais(null);
+    setSelecao(null);
+    setDialogoAberto(false);
+    setAvisoLayout(null);
+  }, [chaveEntrada]);
+
+  const chapas = chapasManuais ?? otimizado.chapas;
+  const chapasRef = useRef(chapas);
+  chapasRef.current = chapas;
   const grupos = useMemo(() => {
     const mapa = new Map<
       number,
       { codigo: number; descricao: string; indices: number[]; cortes: number; aproveitamento: number }
     >();
-    resultado.chapas.forEach((c, indice) => {
+    chapas.forEach((c, indice) => {
       const atual = mapa.get(c.materialCodigo) ?? {
         codigo: c.materialCodigo,
         descricao: c.materialDescricao,
@@ -117,12 +216,179 @@ export function VisualizacaoPlano({
       aproveitamento:
         grupo.indices.length > 0 ? Math.round((grupo.aproveitamento / grupo.indices.length) * 10) / 10 : 0,
     }));
-  }, [resultado.chapas]);
-  const [folha, setFolha] = useState(0);
-  const chapa = resultado.chapas[Math.min(folha, Math.max(0, resultado.chapas.length - 1))];
-  const custoCortes = resultado.totalCortes * valorCorte;
+  }, [chapas]);
 
-  if (resultado.chapas.length === 0 && resultado.naoEncaixadas.length === 0) {
+  const folhaAtual = Math.min(folha, Math.max(0, chapas.length - 1));
+  const chapa = chapas[folhaAtual];
+  const totalCortes = chapas.reduce((soma, item) => soma + item.cortes.length, 0);
+  const aproveitamentoMedio =
+    chapas.length > 0
+      ? Math.round((chapas.reduce((soma, item) => soma + item.aproveitamento, 0) / chapas.length) * 10) / 10
+      : 0;
+  const custoCortes = totalCortes * valorCorte;
+  const pecaSelecionada =
+    selecao && chapas[selecao.folha] ? chapas[selecao.folha].pecas[selecao.indice] : undefined;
+
+  function aplicarPecas(indiceFolha: number, pecasFolha: PecaNoPlano[]) {
+    setChapasManuais((atual) => {
+      const origem = atual ?? otimizado.chapas;
+      const proximo = origem.map((item, indice) => {
+        if (indice !== indiceFolha) return item;
+        const sentido = item.sentidoForcado ?? item.sentidoEntrada;
+        const remonta = remontarChapaDoPlano(item, pecasFolha, serraMm, true, sentido);
+        if (item.sentidoForcado) return remonta;
+        const { sentidoForcado: _ignorado, ...resto } = remonta;
+        return resto;
+      });
+      chapasRef.current = proximo;
+      return proximo;
+    });
+  }
+
+  function inverterSentidoDaFolha(indiceFolha: number) {
+    const atual = chapasRef.current[indiceFolha];
+    if (!atual) return;
+    const novo: SentidoEntrada = atual.sentidoEntrada === 'COMPRIMENTO' ? 'LARGURA' : 'COMPRIMENTO';
+    setChapasManuais((lista) => {
+      const origem = lista ?? otimizado.chapas;
+      const proximo = origem.map((item, indice) =>
+        indice === indiceFolha ? remontarChapaDoPlano(item, item.pecas, serraMm, true, novo) : item,
+      );
+      chapasRef.current = proximo;
+      return proximo;
+    });
+    setAvisoLayout(null);
+  }
+
+  function organizarPecasDaFolha(indiceFolha: number) {
+    const atual = chapasRef.current[indiceFolha];
+    if (!atual || atual.pecas.length === 0) return;
+    const organizadas = organizarPecasNaChapa(
+      atual.pecas,
+      { largura: atual.chapaLargura, altura: atual.chapaAltura },
+      serraMm,
+      true,
+    );
+    if (organizadas === atual.pecas) {
+      setAvisoLayout('Não foi possível reorganizar todas as peças nesta chapa.');
+      return;
+    }
+    aplicarPecas(indiceFolha, organizadas);
+    setAvisoLayout(null);
+  }
+
+  function tentarColocar(
+    indiceFolha: number,
+    indicePeca: number,
+    tentativa: PecaNoPlano,
+  ): PecaNoPlano | null {
+    const atual = chapasRef.current[indiceFolha];
+    if (!atual) return null;
+    const util = areaUtilChapa(
+      { largura: atual.chapaLargura, altura: atual.chapaAltura },
+      serraMm,
+      true,
+    );
+    const outras = atual.pecas.filter((_, indice) => indice !== indicePeca);
+    return encaixarPeca(tentativa, outras, util, serraMm);
+  }
+
+  function moverPeca(
+    indiceFolha: number,
+    indicePeca: number,
+    x: number,
+    y: number,
+    silencioso = false,
+  ): boolean {
+    const atual = chapasRef.current[indiceFolha];
+    const peca = atual?.pecas[indicePeca];
+    if (!peca) return false;
+    const colocada = tentarColocar(indiceFolha, indicePeca, { ...peca, x, y });
+    if (!colocada) {
+      if (!silencioso) {
+        setAvisoLayout('Essa posição encosta em outra peça ou sai da área útil da chapa.');
+      }
+      return false;
+    }
+    if (colocada.x === peca.x && colocada.y === peca.y) return true;
+    setAvisoLayout(null);
+    aplicarPecas(
+      indiceFolha,
+      atual.pecas.map((item, indice) => (indice === indicePeca ? colocada : item)),
+    );
+    return true;
+  }
+
+  function atualizarPeca(
+    indiceFolha: number,
+    indicePeca: number,
+    patch: Partial<PecaNoPlano>,
+    sincronizarMedidas: boolean,
+  ): boolean {
+    const atual = chapasRef.current[indiceFolha];
+    const peca = atual?.pecas[indicePeca];
+    if (!peca) return false;
+    const tentativa = { ...peca, ...patch };
+    const colocada = tentarColocar(indiceFolha, indicePeca, tentativa);
+    if (!colocada) {
+      setAvisoLayout('A peça não cabe nessa medida ou posição, com o espaço da serra entre as demais.');
+      return false;
+    }
+    setAvisoLayout(null);
+    let pecasNovas = atual.pecas.map((item, indice) => (indice === indicePeca ? colocada : item));
+    if (sincronizarMedidas && aoAlterarMedidas) {
+      const pecaForm = pecas.find((item) => numero(item.codigo) === colocada.codigo);
+      const medidasDiferentes =
+        !pecaForm ||
+        numero(pecaForm.largura) !== colocada.largura ||
+        numero(pecaForm.altura) !== colocada.altura;
+      const codigo = aoAlterarMedidas({
+        codigo: colocada.codigo,
+        largura: colocada.largura,
+        altura: colocada.altura,
+      });
+      if (medidasDiferentes) ignorarChave.current = 'pending';
+      if (codigo !== colocada.codigo) {
+        pecasNovas = pecasNovas.map((item, indice) =>
+          indice === indicePeca ? { ...colocada, codigo } : item,
+        );
+      }
+    }
+    aplicarPecas(indiceFolha, pecasNovas);
+    return true;
+  }
+
+  function girarPecaSelecionada() {
+    if (!selecao || !pecaSelecionada) return;
+    if (veioDaPeca(pecas, pecaSelecionada.codigo) !== 'INDIFERENTE') {
+      setAvisoLayout('Esta peça tem veio definido e não pode girar no plano.');
+      return;
+    }
+    atualizarPeca(
+      selecao.folha,
+      selecao.indice,
+      {
+        largura: pecaSelecionada.altura,
+        altura: pecaSelecionada.largura,
+        girada: !pecaSelecionada.girada,
+      },
+      true,
+    );
+  }
+
+  function aplicarMedidas(largura: number, altura: number) {
+    if (!selecao || !pecaSelecionada) return false;
+    return atualizarPeca(selecao.folha, selecao.indice, { largura, altura }, true);
+  }
+
+  function escolherFolha(indice: number) {
+    setFolha(indice);
+    setSelecao(null);
+    setDialogoAberto(false);
+    setAvisoLayout(null);
+  }
+
+  if (otimizado.chapas.length === 0 && otimizado.naoEncaixadas.length === 0) {
     return (
       <p className="text-sm text-stone-500">
         Lance largura, altura e quantidade das peças para ver o plano de corte nesta tela.
@@ -139,26 +405,49 @@ export function VisualizacaoPlano({
             Disposição otimizada nas chapas (faixas para seccionadora, serra{' '}
             {serraMm.toLocaleString('pt-BR')} mm). As quatro bordas são aparadas com essa espessura antes
             das peças. A chapa entra no sentido do comprimento ou da largura: primeiro o aparo e os cortes
-            longos, depois os curtos de cada faixa.
+            longos, depois os curtos de cada faixa. Em cada chapa dá para inverter a direção desses cortes.
+            {editavel
+              ? ' Clique numa peça para alterar medidas, girar ou mover. Também é possível arrastar no desenho.'
+              : ''}
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           {acoes}
-          {resultado.chapas.length > 0 && (
+          {chapasManuais && (
+            <Botao
+              type="button"
+              variante="secundario"
+              onClick={() => {
+                setChapasManuais(null);
+                setSelecao(null);
+                setDialogoAberto(false);
+                setAvisoLayout(null);
+              }}
+            >
+              Reposicionar automaticamente
+            </Botao>
+          )}
+          {chapas.length > 0 && (
             <p className="text-sm font-semibold text-stone-700">
-              {resultado.totalChapas} chapa(s) · {resultado.totalCortes} corte(s)
+              {chapas.length} chapa(s) · {totalCortes} corte(s)
               {valorCorte > 0 ? ` · ${formatarMoeda(custoCortes)}` : ''} · aproveitamento médio{' '}
-              {resultado.aproveitamentoMedio.toLocaleString('pt-BR')}%
+              {aproveitamentoMedio.toLocaleString('pt-BR')}%
             </p>
           )}
         </div>
       </div>
 
-      {resultado.naoEncaixadas.length > 0 && (
+      {avisoLayout && (
+        <p className="rounded-xl bg-amber-50 px-4 py-2 text-sm text-amber-900 ring-1 ring-inset ring-amber-200">
+          {avisoLayout}
+        </p>
+      )}
+
+      {otimizado.naoEncaixadas.length > 0 && (
         <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-800 ring-1 ring-inset ring-rose-200">
           <p className="font-semibold">Peças que não cabem na chapa</p>
           <ul className="mt-1 list-inside list-disc">
-            {resultado.naoEncaixadas.slice(0, 8).map((item, i) => (
+            {otimizado.naoEncaixadas.slice(0, 8).map((item, i) => (
               <li key={`${item.codigo}-${i}`}>
                 {item.codigo} · {item.descricao} ({item.largura}×{item.altura} mm) — {item.motivo}
               </li>
@@ -167,7 +456,7 @@ export function VisualizacaoPlano({
         </div>
       )}
 
-      {resultado.chapas.length > 0 && (
+      {chapas.length > 0 && (
         <>
           <div className="space-y-4">
             {grupos.map((grupo) => (
@@ -182,55 +471,139 @@ export function VisualizacaoPlano({
                 <div className="flex flex-wrap gap-2">
                   {grupo.indices.map((indice) => (
                     <button
-                      key={`${grupo.codigo}-${resultado.chapas[indice].indice}`}
+                      key={`${grupo.codigo}-${chapas[indice].indice}`}
                       type="button"
-                      onClick={() => setFolha(indice)}
+                      onClick={() => escolherFolha(indice)}
                       className={
-                        indice === folha
+                        indice === folhaAtual
                           ? 'rounded-lg bg-madeira-700 px-3 py-1.5 text-xs font-semibold text-white'
                           : 'rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-stone-600 ring-1 ring-inset ring-stone-300 hover:bg-stone-50'
                       }
                     >
-                      Chapa {resultado.chapas[indice].indice}
+                      Chapa {chapas[indice].indice}
                     </button>
                   ))}
                 </div>
               </div>
             ))}
           </div>
-          {chapa && <DesenhoChapa chapa={chapa} valorCorte={valorCorte} />}
+          {chapa && (
+            <DesenhoChapa
+              chapa={chapa}
+              editavel={editavel}
+              pecaSelecionada={selecao?.folha === folhaAtual ? selecao.indice : undefined}
+              aoClicarPeca={(indice) => {
+                setSelecao({ folha: folhaAtual, indice });
+                setDialogoAberto(true);
+                setAvisoLayout(null);
+              }}
+              aoMoverPeca={(indice, x, y) => {
+                setSelecao({ folha: folhaAtual, indice });
+                setDialogoAberto(true);
+                moverPeca(folhaAtual, indice, x, y, true);
+              }}
+              aoInverterSentido={() => inverterSentidoDaFolha(folhaAtual)}
+              aoOrganizarPecas={() => organizarPecasDaFolha(folhaAtual)}
+            />
+          )}
         </>
+      )}
+
+      {editavel && dialogoAberto && pecaSelecionada && selecao && (
+        <DialogoPecaPlano
+          peca={pecaSelecionada}
+          veio={veioDaPeca(pecas, pecaSelecionada.codigo)}
+          aoFechar={() => setDialogoAberto(false)}
+          aoGirar={girarPecaSelecionada}
+          aoAplicarMedidas={aplicarMedidas}
+          aoMover={(x, y) => moverPeca(selecao.folha, selecao.indice, x, y)}
+        />
       )}
     </div>
   );
 }
 
-function comprimentoCorte(x1: number, y1: number, x2: number, y2: number): number {
-  return Math.round(Math.hypot(x2 - x1, y2 - y1));
+function pecaEhPequena(
+  peca: ChapaDoPlano['pecas'][number],
+  fonteAlvo: number,
+): boolean {
+  const fontePossivel = Math.min(fonteAlvo, peca.largura * 0.2, peca.altura * 0.2);
+  return fontePossivel < fonteAlvo * 0.55;
 }
 
 export function DesenhoChapa({
   chapa,
-  valorCorte,
-  larguraMaxima = 920,
+  editavel = false,
+  pecaSelecionada,
+  aoClicarPeca,
+  aoMoverPeca,
+  aoInverterSentido,
+  aoOrganizarPecas,
 }: {
   chapa: ChapaDoPlano;
-  valorCorte: number;
-  larguraMaxima?: number;
+  editavel?: boolean;
+  pecaSelecionada?: number;
+  aoClicarPeca?: (indice: number) => void;
+  aoMoverPeca?: (indice: number, x: number, y: number) => void;
+  aoInverterSentido?: () => void;
+  aoOrganizarPecas?: () => void;
 }) {
-  const maxLargura = larguraMaxima;
-  const margem = Math.max(chapa.chapaLargura, chapa.chapaAltura) * 0.055;
-  const escala = maxLargura / (chapa.chapaLargura + margem * 1.4);
-  const larguraSvg = (chapa.chapaLargura + margem * 1.4) * escala;
-  const alturaSvg = (chapa.chapaAltura + margem * 1.4) * escala;
+  const svgRef = useRef<SVGSVGElement>(null);
+  const arrasto = useRef<{ indice: number; dx: number; dy: number; x0: number; y0: number; moveu: boolean } | null>(
+    null,
+  );
+  const menorChapa = Math.min(chapa.chapaLargura, chapa.chapaAltura);
+  const margem = Math.max(chapa.chapaLargura, chapa.chapaAltura) * 0.07;
   const areaChapaM2 = (chapa.chapaLargura * chapa.chapaAltura) / 1_000_000;
-  const fonteChapa = Math.max(28, margem * 0.45);
+  const fonteAlvo = menorChapa * 0.034;
+  const fonteChapa = Math.max(fonteAlvo, margem * 0.42);
   const traco = Math.max(2, chapa.chapaLargura / 500);
-  const raioOrdem = Math.max(22, Math.min(chapa.chapaLargura, chapa.chapaAltura) * 0.018);
+  const raioOrdem = Math.max(22, menorChapa * 0.018);
+
+  const pecasNumeradas = chapa.pecas
+    .map((peca, indice) => ({ peca, indice, pequena: pecaEhPequena(peca, fonteAlvo) }))
+    .filter((item) => item.pequena)
+    .map((item, ordem) => ({ ...item, numero: ordem + 1 }));
+  const numeroDaPeca = new Map(pecasNumeradas.map((item) => [item.indice, item.numero]));
+
+  function iniciarArrasto(evento: PointerEvent<SVGRectElement>, indice: number, peca: PecaNoPlano) {
+    if (!editavel || !svgRef.current) return;
+    evento.preventDefault();
+    evento.currentTarget.setPointerCapture(evento.pointerId);
+    const ponto = pontoNoSvg(svgRef.current, evento.clientX, evento.clientY);
+    arrasto.current = {
+      indice,
+      dx: ponto.x - peca.x,
+      dy: ponto.y - peca.y,
+      x0: evento.clientX,
+      y0: evento.clientY,
+      moveu: false,
+    };
+  }
+
+  function moverArrasto(evento: PointerEvent<SVGRectElement>) {
+    if (!editavel || !arrasto.current || !svgRef.current) return;
+    const deslocou =
+      Math.abs(evento.clientX - arrasto.current.x0) > 4 || Math.abs(evento.clientY - arrasto.current.y0) > 4;
+    if (deslocou) arrasto.current.moveu = true;
+    if (!arrasto.current.moveu) return;
+    const ponto = pontoNoSvg(svgRef.current, evento.clientX, evento.clientY);
+    aoMoverPeca?.(arrasto.current.indice, ponto.x - arrasto.current.dx, ponto.y - arrasto.current.dy);
+  }
+
+  function soltarArrasto(evento: PointerEvent<SVGRectElement>, indice: number) {
+    if (!editavel) return;
+    const dados = arrasto.current;
+    arrasto.current = null;
+    if (evento.currentTarget.hasPointerCapture(evento.pointerId)) {
+      evento.currentTarget.releasePointerCapture(evento.pointerId);
+    }
+    if (!dados?.moveu) aoClicarPeca?.(indice);
+  }
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-4 text-xs text-stone-600">
+      <div className="flex flex-wrap gap-4 text-xs text-stone-600 print:hidden">
         <span>
           Chapa {chapa.chapaLargura} × {chapa.chapaAltura} mm
         </span>
@@ -240,14 +613,37 @@ export function DesenhoChapa({
         <span>
           Entra na seccionadora no sentido {chapa.sentidoEntradaMm.toLocaleString('pt-BR')} mm
           {chapa.sentidoEntrada === 'COMPRIMENTO' ? ' (comprimento)' : ' (largura)'}
+          {chapa.sentidoForcado ? ' · definido nesta chapa' : ''}
         </span>
+        {(aoOrganizarPecas || aoInverterSentido) && (
+          <span className="flex flex-wrap gap-2">
+            {aoOrganizarPecas && (
+              <button
+                type="button"
+                onClick={aoOrganizarPecas}
+                title="Agrupa as peças na borda mais próxima de onde você as moveu e fecha as folgas"
+                className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white shadow-sm shadow-emerald-600/40 hover:bg-emerald-400"
+              >
+                Organizar peças
+              </button>
+            )}
+            {aoInverterSentido && (
+              <button
+                type="button"
+                onClick={aoInverterSentido}
+                className="rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-bold text-white shadow-sm shadow-orange-600/40 hover:bg-orange-400"
+              >
+                Inverter direção do corte
+              </button>
+            )}
+          </span>
+        )}
       </div>
-      <div className="overflow-x-auto rounded-xl border border-stone-300 bg-stone-100 p-3">
+      <div className="flex flex-col gap-3 overflow-hidden rounded-xl border border-stone-300 bg-stone-100 p-3 lg:flex-row">
         <svg
+          ref={svgRef}
           viewBox={`${-margem} ${-margem * 0.35} ${chapa.chapaLargura + margem * 1.35} ${chapa.chapaAltura + margem * 1.15}`}
-          width={larguraSvg}
-          height={alturaSvg}
-          className="mx-auto max-w-full"
+          className="mx-auto h-auto max-h-[158mm] w-full max-w-full flex-1 touch-none"
           role="img"
           aria-label={`Plano de corte da chapa ${chapa.indice}`}
         >
@@ -282,37 +678,64 @@ export function DesenhoChapa({
 
           {chapa.pecas.map((peca, indice) => {
             const cor = CORES[peca.codigo % CORES.length];
-            const menorLado = Math.min(peca.largura, peca.altura);
-            const fonteNome = Math.max(14, Math.min(menorLado * 0.13, peca.largura * 0.1, 36));
-            const fonteCota = Math.max(14, Math.min(menorLado * 0.1, 32));
+            const numeroLista = numeroDaPeca.get(indice);
+            const fonteCota = Math.min(fonteAlvo, peca.largura * 0.2, peca.altura * 0.2);
+            const fonteNome = Math.min(fonteAlvo * 0.85, peca.largura * 0.16, peca.altura * 0.16);
+            const selecionada = pecaSelecionada === indice;
             return (
-              <g key={`${peca.codigo}-${indice}-${peca.x}-${peca.y}`}>
+              <g key={`${peca.codigo}-${indice}`} pointerEvents="none">
                 <rect
                   x={peca.x}
                   y={peca.y}
                   width={peca.largura}
                   height={peca.altura}
                   fill={cor}
-                  stroke="#5c3719"
-                  strokeWidth={traco}
+                  stroke={selecionada ? '#1d4ed8' : '#5c3719'}
+                  strokeWidth={traco * (selecionada ? 2.2 : 1)}
                 />
-                <NomePeca peca={peca} fonteNome={fonteNome} padEsq={fonteCota * 1.35} padBaixo={fonteCota * 1.15} />
-                <CotaHorizontal
-                  x={peca.x}
-                  y={peca.y + peca.altura}
-                  comprimento={peca.largura}
-                  texto={`${peca.largura}`}
-                  fonte={fonteCota}
-                  traco={traco}
-                />
-                <CotaVertical
-                  x={peca.x}
-                  y={peca.y}
-                  comprimento={peca.altura}
-                  texto={`${peca.altura}`}
-                  fonte={fonteCota}
-                  traco={traco}
-                />
+                {numeroLista ? (
+                  <NumeroPeca peca={peca} numero={numeroLista} fonteAlvo={fonteAlvo} />
+                ) : (
+                  <>
+                    <NomePeca
+                      peca={peca}
+                      fonteNome={fonteNome}
+                      padEsq={peca.largura * 0.12}
+                      padBaixo={peca.altura * 0.12}
+                    />
+                    <CotaHorizontal
+                      x={peca.x}
+                      y={peca.y + peca.altura - peca.altura * 0.1}
+                      comprimento={peca.largura}
+                      texto={`${peca.largura}`}
+                      fonte={fonteCota}
+                      traco={traco}
+                    />
+                    <CotaVertical
+                      x={peca.x + peca.largura * 0.1}
+                      y={peca.y}
+                      comprimento={peca.altura}
+                      texto={`${peca.altura}`}
+                      fonte={fonteCota}
+                      traco={traco}
+                    />
+                  </>
+                )}
+                {editavel && (
+                  <rect
+                    x={peca.x}
+                    y={peca.y}
+                    width={peca.largura}
+                    height={peca.altura}
+                    fill="transparent"
+                    className="cursor-grab"
+                    style={{ pointerEvents: 'all', touchAction: 'none' }}
+                    onPointerDown={(evento) => iniciarArrasto(evento, indice, peca)}
+                    onPointerMove={moverArrasto}
+                    onPointerUp={(evento) => soltarArrasto(evento, indice)}
+                    onPointerCancel={(evento) => soltarArrasto(evento, indice)}
+                  />
+                )}
               </g>
             );
           })}
@@ -327,7 +750,7 @@ export function DesenhoChapa({
             const longo = corte.fase === 'LONGO' || corte.fase === 'APARAR';
             const corLinha = corte.fase === 'APARAR' ? '#6b21a8' : longo ? '#9f1239' : '#c2410c';
             return (
-              <g key={`corte-${corte.ordem}`}>
+              <g key={`corte-${corte.ordem}`} pointerEvents="none">
                 <line
                   x1={corte.x1}
                   y1={corte.y1}
@@ -354,30 +777,87 @@ export function DesenhoChapa({
             );
           })}
         </svg>
+        {pecasNumeradas.length > 0 && (
+          <aside className="lista-pecas-numeradas w-full shrink-0 rounded-lg bg-white p-3 ring-1 ring-inset ring-stone-200 lg:w-56 print:w-[58mm]">
+            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-stone-600">
+              Peças numeradas
+            </p>
+            <ol className="space-y-1.5 text-xs text-stone-800">
+              {pecasNumeradas.map((item) => (
+                <li key={`${item.indice}-${item.numero}`}>
+                  {editavel && aoClicarPeca ? (
+                    <button
+                      type="button"
+                      onClick={() => aoClicarPeca(item.indice)}
+                      className={`flex w-full gap-2 rounded-md px-1 py-0.5 text-left hover:bg-stone-50 ${
+                        pecaSelecionada === item.indice ? 'bg-sky-50 ring-1 ring-sky-300' : ''
+                      }`}
+                    >
+                      <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-madeira-700 text-[10px] font-extrabold text-white">
+                        {item.numero}
+                      </span>
+                      <span>
+                        <span className="font-bold tabular-nums">
+                          {item.peca.largura} × {item.peca.altura} mm
+                        </span>
+                        <span className="mt-0.5 block leading-tight text-stone-600">
+                          {item.peca.codigo} · {item.peca.descricao}
+                        </span>
+                      </span>
+                    </button>
+                  ) : (
+                    <span className="flex gap-2">
+                      <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-madeira-700 text-[10px] font-extrabold text-white">
+                        {item.numero}
+                      </span>
+                      <span>
+                        <span className="font-bold tabular-nums">
+                          {item.peca.largura} × {item.peca.altura} mm
+                        </span>
+                        <span className="mt-0.5 block leading-tight text-stone-600">
+                          {item.peca.codigo} · {item.peca.descricao}
+                        </span>
+                      </span>
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </aside>
+        )}
       </div>
-      {chapa.cortes.length > 0 && (
-        <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-950 ring-1 ring-inset ring-rose-200">
-          <p className="font-semibold text-rose-900">
-            Ordem dos cortes na seccionadora
-            <span className="ml-2 font-normal text-rose-700">
-              — entra em {chapa.sentidoEntradaMm.toLocaleString('pt-BR')} mm; aparar, longos e depois curtos
-              {valorCorte > 0
-                ? ` · ${chapa.cortes.length} corte(s) nesta chapa (${formatarMoeda(chapa.cortes.length * valorCorte)})`
-                : ''}
-            </span>
-          </p>
-          <ol className="mt-2 grid list-decimal gap-1 pl-5 sm:grid-cols-2">
-            {chapa.cortes.map((corte) => (
-              <li key={corte.ordem}>
-                {FASE_CORTE_LABEL[corte.fase]}{' '}
-                {corte.direcao === 'HORIZONTAL' ? 'horizontal' : 'vertical'} ·{' '}
-                {comprimentoCorte(corte.x1, corte.y1, corte.x2, corte.y2).toLocaleString('pt-BR')} mm
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
     </div>
+  );
+}
+
+function NumeroPeca({
+  peca,
+  numero,
+  fonteAlvo,
+}: {
+  peca: ChapaDoPlano['pecas'][number];
+  numero: number;
+  fonteAlvo: number;
+}) {
+  const cx = peca.x + peca.largura / 2;
+  const cy = peca.y + peca.altura / 2;
+  const raio = Math.min(Math.min(peca.largura, peca.altura) * 0.32, fonteAlvo * 0.85);
+  const fonte = raio * 1.05;
+  return (
+    <g>
+      <circle cx={cx} cy={cy} r={raio} fill="#7c4a21" stroke="#fff7ed" strokeWidth={raio * 0.12} />
+      <text
+        x={cx}
+        y={cy}
+        textAnchor="middle"
+        dominantBaseline="middle"
+        fill="#fff7ed"
+        fontSize={fonte}
+        fontWeight={800}
+      >
+        {numero}
+      </text>
+    </g>
   );
 }
 
@@ -490,9 +970,11 @@ function CotaHorizontal({
         textAnchor="middle"
         dominantBaseline={fora ? 'hanging' : 'auto'}
         fill="#3d2411"
-        stroke="none"
+        stroke="#f8f1e7"
+        strokeWidth={fonte * 0.22}
+        paintOrder="stroke"
         fontSize={fonte}
-        fontWeight={700}
+        fontWeight={800}
       >
         {texto}
       </text>
@@ -531,13 +1013,240 @@ function CotaVertical({
         textAnchor="middle"
         dominantBaseline="middle"
         fill="#3d2411"
-        stroke="none"
+        stroke="#f8f1e7"
+        strokeWidth={fonte * 0.22}
+        paintOrder="stroke"
         fontSize={fonte}
-        fontWeight={700}
+        fontWeight={800}
         transform={`rotate(-90 ${cx} ${cy})`}
       >
         {texto}
       </text>
     </g>
+  );
+}
+
+function BotaoSeta({
+  rotulo,
+  onClick,
+  children,
+}: {
+  rotulo: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={rotulo}
+      onClick={onClick}
+      className="flex size-10 items-center justify-center rounded-lg bg-white text-lg font-bold text-stone-700 ring-1 ring-inset ring-stone-300 hover:bg-stone-50"
+    >
+      {children}
+    </button>
+  );
+}
+
+function DialogoPecaPlano({
+  peca,
+  veio,
+  aoFechar,
+  aoGirar,
+  aoAplicarMedidas,
+  aoMover,
+}: {
+  peca: PecaNoPlano;
+  veio: Veio;
+  aoFechar: () => void;
+  aoGirar: () => void;
+  aoAplicarMedidas: (largura: number, altura: number) => boolean;
+  aoMover: (x: number, y: number) => boolean;
+}) {
+  const [largura, setLargura] = useState(String(peca.largura));
+  const [altura, setAltura] = useState(String(peca.altura));
+  const [x, setX] = useState(String(peca.x));
+  const [y, setY] = useState(String(peca.y));
+  const [erro, setErro] = useState<string | null>(null);
+  const [passo, setPasso] = useState(PASSO_GROSSO_MM);
+  const podeGirar = veio === 'INDIFERENTE';
+
+  useEffect(() => {
+    setLargura(String(peca.largura));
+    setAltura(String(peca.altura));
+    setX(String(peca.x));
+    setY(String(peca.y));
+  }, [peca.codigo, peca.largura, peca.altura, peca.x, peca.y, peca.girada]);
+
+  useEffect(() => {
+    function tecla(evento: KeyboardEvent) {
+      if (evento.key === 'Escape') aoFechar();
+    }
+    window.addEventListener('keydown', tecla);
+    return () => window.removeEventListener('keydown', tecla);
+  }, [aoFechar]);
+
+  function aplicarMedidas() {
+    const novaLargura = Math.round(numero(largura));
+    const novaAltura = Math.round(numero(altura));
+    if (novaLargura <= 0 || novaAltura <= 0) {
+      setErro('Informe largura e altura maiores que zero.');
+      return;
+    }
+    if (aoAplicarMedidas(novaLargura, novaAltura)) setErro(null);
+    else setErro('A peça não cabe com essas medidas nesta posição, com o espaço da serra.');
+  }
+
+  function aplicarPosicao() {
+    const novoX = Math.round(numero(x));
+    const novoY = Math.round(numero(y));
+    if (aoMover(novoX, novoY)) setErro(null);
+    else {
+      setErro('Essa posição encosta em outra peça ou sai da área útil da chapa.');
+      setX(String(peca.x));
+      setY(String(peca.y));
+    }
+  }
+
+  function deslocar(dx: number, dy: number) {
+    if (aoMover(peca.x + dx, peca.y + dy)) setErro(null);
+    else setErro('Não foi possível mover nessa direção.');
+  }
+
+  return (
+    <div
+      className="fixed bottom-4 right-4 z-50 w-[min(100%-2rem,28rem)] print:hidden"
+      role="dialog"
+      aria-labelledby="titulo-editar-peca"
+    >
+      <div className="cartao max-h-[min(90vh,40rem)] overflow-y-auto p-5 shadow-xl ring-1 ring-stone-200">
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <h2 id="titulo-editar-peca" className="text-lg font-bold text-stone-900">
+              Editar peça no plano
+            </h2>
+            <p className="mt-1 text-sm text-stone-500">
+              {peca.codigo} · {peca.descricao}
+              {peca.girada ? ' · girada' : ''}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={aoFechar}
+            className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+            aria-label="Fechar"
+          >
+            <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+
+        {erro && <p className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800">{erro}</p>}
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Campo
+            rotulo="Largura (mm)"
+            inputMode="numeric"
+            value={largura}
+            onChange={(evento) => setLargura(evento.target.value)}
+          />
+          <Campo
+            rotulo="Altura (mm)"
+            inputMode="numeric"
+            value={altura}
+            onChange={(evento) => setAltura(evento.target.value)}
+          />
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Botao type="button" onClick={aplicarMedidas}>
+            Aplicar medidas
+          </Botao>
+          <Botao type="button" variante="secundario" onClick={aoGirar} disabled={!podeGirar}>
+            Girar 90°
+          </Botao>
+        </div>
+        {!podeGirar && (
+          <p className="mt-2 text-xs text-stone-500">
+            {VEIO_LABEL[veio]}. Com veio definido a peça não gira no plano.
+          </p>
+        )}
+
+        <div className="mt-5 border-t border-stone-200 pt-4">
+          <p className="mb-2 text-sm font-semibold text-stone-800">Posição na chapa</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Campo
+              rotulo="X (mm)"
+              inputMode="numeric"
+              value={x}
+              onChange={(evento) => setX(evento.target.value)}
+              onBlur={aplicarPosicao}
+            />
+            <Campo
+              rotulo="Y (mm)"
+              inputMode="numeric"
+              value={y}
+              onChange={(evento) => setY(evento.target.value)}
+              onBlur={aplicarPosicao}
+            />
+          </div>
+          <div className="mt-3 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="grid grid-cols-3 gap-1">
+                <span />
+                <BotaoSeta rotulo={`Mover ${passo} mm para cima`} onClick={() => deslocar(0, -passo)}>
+                  ↑
+                </BotaoSeta>
+                <span />
+                <BotaoSeta rotulo={`Mover ${passo} mm para a esquerda`} onClick={() => deslocar(-passo, 0)}>
+                  ←
+                </BotaoSeta>
+                <span />
+                <BotaoSeta rotulo={`Mover ${passo} mm para a direita`} onClick={() => deslocar(passo, 0)}>
+                  →
+                </BotaoSeta>
+                <span />
+                <BotaoSeta rotulo={`Mover ${passo} mm para baixo`} onClick={() => deslocar(0, passo)}>
+                  ↓
+                </BotaoSeta>
+                <span />
+              </div>
+              <div className="flex flex-col gap-1">
+                <button
+                  type="button"
+                  onClick={() => setPasso(PASSO_FINO_MM)}
+                  className={`rounded-lg px-2 py-1 text-xs font-semibold ${
+                    passo === PASSO_FINO_MM
+                      ? 'bg-madeira-700 text-white'
+                      : 'bg-white text-stone-600 ring-1 ring-inset ring-stone-300'
+                  }`}
+                >
+                  1 mm
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPasso(PASSO_GROSSO_MM)}
+                  className={`rounded-lg px-2 py-1 text-xs font-semibold ${
+                    passo === PASSO_GROSSO_MM
+                      ? 'bg-madeira-700 text-white'
+                      : 'bg-white text-stone-600 ring-1 ring-inset ring-stone-300'
+                  }`}
+                >
+                  10 mm
+                </button>
+              </div>
+            </div>
+            <p className="max-w-xs text-xs text-stone-500">
+              Mova com as setas, pelos campos X e Y ou arrastando a peça no desenho.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5 flex justify-end">
+          <Botao type="button" variante="secundario" onClick={aoFechar}>
+            Fechar
+          </Botao>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -9,7 +9,7 @@ const PASSOS = [
   },
   {
     titulo: 'Lance as medidas',
-    texto: 'Digite peça por peça, cole direto do Excel ou importe o arquivo CSV/TXT do Corte Certo.',
+    texto: 'Digite peça por peça, cole direto do Excel ou importe o arquivo CSV/TXT do Corte MadePinus.',
   },
   {
     titulo: 'Envie para a central',
@@ -23,9 +23,9 @@ const PASSOS = [
 
 const RECURSOS = [
   {
-    titulo: 'Padrão Corte Certo nativo',
+    titulo: 'Padrão Corte MadePinus',
     texto:
-      'A plataforma gera o arquivo exatamente no layout aceito pelo Corte Certo (código, quantidade, largura, altura, material e descrição), pronto para importar e otimizar.',
+      'A plataforma gera o arquivo no layout do Corte MadePinus (código, quantidade, largura, altura, material e descrição), pronto para otimizar e cortar.',
   },
   {
     titulo: 'Validação automática',
@@ -82,7 +82,7 @@ export function Inicio() {
           </h1>
           <p className="mt-5 max-w-2xl text-lg text-madeira-100">
             Uma plataforma feita para marcenarias, montadores e lojistas. Suas medidas chegam à nossa central
-            já no formato do <strong className="font-semibold text-white">Corte Certo</strong>, prontas para
+            já no formato do <strong className="font-semibold text-white">Corte MadePinus</strong>, prontas para
             otimização e corte na seccionadora.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
@@ -144,7 +144,7 @@ export function Inicio() {
             <div>
               <h2 className="text-2xl font-bold text-stone-900">O arquivo que a nossa máquina entende</h2>
               <p className="mt-3 text-sm leading-relaxed text-stone-600">
-                O layout oficial do Corte Certo tem seis campos por linha, separados por vírgula. É exatamente
+                O layout do Corte MadePinus tem seis campos por linha, separados por vírgula. É exatamente
                 isso que a plataforma gera para a central — sem retrabalho, sem digitação duplicada e sem risco
                 de medida trocada.
               </p>

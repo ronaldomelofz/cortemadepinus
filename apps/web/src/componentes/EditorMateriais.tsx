@@ -68,7 +68,7 @@ export function EditorMateriais({
 
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
             <label className="block">
-              <span className="rotulo">Código (Corte Certo)</span>
+              <span className="rotulo">Código (Corte MadePinus)</span>
               <input
                 className="campo"
                 inputMode="numeric"

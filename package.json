@@ -2,7 +2,7 @@
   "name": "cortemadepinus",
   "private": true,
   "version": "1.0.0",
-  "description": "Plataforma de envio de planos de corte (Corte Certo) para a central de servicos MadePinus",
+  "description": "Plataforma de envio de planos de corte MadePinus para a central de servicos",
   "workspaces": [
     "apps/web",
     "apps/api",

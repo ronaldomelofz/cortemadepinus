@@ -54,7 +54,7 @@ export const materialSchema = z.object({
     .number({ invalid_type_error: 'Código do material deve ser numérico' })
     .int('Use um código inteiro')
     .min(1)
-    .max(99999, 'O Corte Certo aceita códigos de material até 99999'),
+    .max(99999, 'O Corte MadePinus aceita códigos de material até 99999'),
   descricao: z.string().trim().min(2, 'Descreva o material').max(80),
   espessura: z.number().positive('Espessura deve ser maior que zero').max(100),
   cor: z.string().trim().max(60).optional().or(z.literal('')),
@@ -159,7 +159,7 @@ export const produtoMdfSchema = z.object({
     .number({ invalid_type_error: 'Código do material deve ser numérico' })
     .int('Use um código inteiro')
     .min(1)
-    .max(99999, 'O Corte Certo aceita códigos de material até 99999')
+    .max(99999, 'O Corte MadePinus aceita códigos de material até 99999')
     .optional(),
   nome: z.string().trim().min(2, 'Informe o nome do MDF').max(80),
   cor: z.string().trim().min(1, 'Informe a cor').max(60),

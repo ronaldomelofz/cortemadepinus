@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Teste de fumaca da API: percorre o caminho real de um pedido, do login do
- * cliente ate a central mudar o status, e confere o arquivo Corte Certo.
+ * cliente ate a central mudar o status, e confere o arquivo do Corte MadePinus.
  *
  * Uso (com a API no ar):
  *   npm run verificar --workspace @cortemadepinus/api
@@ -146,7 +146,7 @@ async function main() {
   });
   verificar('peça maior que a chapa é recusada', invalido.status === 422, `status ${invalido.status}`);
 
-  console.log('· Exportação Corte Certo');
+  console.log('· Exportação Corte MadePinus');
   const csv = await chamar(`/api/pedidos/${pedido.id}/exportar/csv`, {
     token: tokenCliente,
     texto: true,

@@ -79,16 +79,16 @@ function BarraImpressao({ titulo, pedido }: { titulo: string; pedido: Pedido }) 
   );
 }
 
-function CabecalhoPedido({ pedido }: { pedido: Pedido }) {
+function CabecalhoPedido({ pedido, compacto = false }: { pedido: Pedido; compacto?: boolean }) {
   return (
-    <header className="mb-4 border-b border-stone-300 pb-3">
+    <header className={compacto ? 'mb-2 shrink-0 border-b border-stone-300 pb-2' : 'mb-4 border-b border-stone-300 pb-3'}>
       <p className="text-xs font-semibold uppercase tracking-wide text-madeira-800">
         MadePinus · Central de Serviços de Corte
       </p>
-      <h1 className="mt-1 text-xl font-bold text-stone-900">
+      <h1 className={compacto ? 'mt-0.5 text-lg font-bold text-stone-900' : 'mt-1 text-xl font-bold text-stone-900'}>
         Pedido #{String(pedido.numero).padStart(5, '0')} · {pedido.titulo}
       </h1>
-      <p className="mt-1 text-sm text-stone-700">
+      <p className="mt-0.5 text-sm text-stone-700">
         Cliente: <strong>{pedido.cliente?.nome ?? '—'}</strong>
         {pedido.cliente?.empresa ? ` · ${pedido.cliente.empresa}` : ''}
       </p>
@@ -112,23 +112,30 @@ function ImpressaoPlanos({ pedido, config }: { pedido: Pedido; config: Configura
 
   return (
     <div className="bg-white text-stone-900">
-      <style>{`@media print { @page { size: A4 landscape; margin: 8mm; } }`}</style>
+      <style>{`
+        @page { size: A4 landscape; margin: 0; }
+        @media print {
+          html, body { margin: 0; padding: 0; background: #fff !important; }
+        }
+      `}</style>
       <BarraImpressao titulo="Impressão dos planos de corte" pedido={pedido} />
-      <div className="px-6 py-4">
+      <div>
         {resultado.chapas.length === 0 ? (
-          <p className="text-sm text-stone-600">Não há chapas para imprimir neste pedido.</p>
+          <p className="p-6 text-sm text-stone-600">Não há chapas para imprimir neste pedido.</p>
         ) : (
-          resultado.chapas.map((chapa, indice) => (
+          resultado.chapas.map((chapa) => (
             <section
               key={`${chapa.materialCodigo}-${chapa.indice}`}
-              className={indice < resultado.chapas.length - 1 ? 'quebra-pagina mb-8' : 'mb-4'}
+              className="pagina-a4-paisagem"
             >
-              <CabecalhoPedido pedido={pedido} />
-              <p className="mb-3 text-sm font-semibold text-stone-800">
+              <CabecalhoPedido pedido={pedido} compacto />
+              <p className="mb-2 shrink-0 text-sm font-semibold text-stone-800">
                 {chapa.materialDescricao} · Chapa {chapa.indice} de {resultado.totalChapas} ·{' '}
                 {chapa.chapaLargura} × {chapa.chapaAltura} mm · {chapa.aproveitamento}% de aproveitamento
               </p>
-              <DesenhoChapa chapa={chapa} valorCorte={0} larguraMaxima={1080} />
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <DesenhoChapa chapa={chapa} />
+              </div>
             </section>
           ))
         )}
@@ -180,9 +187,14 @@ function ImpressaoEtiquetas({ pedido }: { pedido: Pedido }) {
 
   return (
     <div className="bg-white text-stone-900">
-      <style>{`@media print { @page { size: A4 portrait; margin: 8mm; } }`}</style>
+      <style>{`
+        @page { size: A4 portrait; margin: 0; }
+        @media print {
+          html, body { margin: 0; padding: 0; background: #fff !important; }
+        }
+      `}</style>
       <BarraImpressao titulo="Impressão de etiquetas" pedido={pedido} />
-      <div className="px-4 py-4">
+      <div className="pagina-a4-retrato">
         <p className="nao-imprimir mb-3 text-sm text-stone-500">
           Cada etiqueta traz nome do cliente, nome do projeto e nome da peça. Uma etiqueta por peça física.
         </p>
