@@ -154,6 +154,27 @@ export function EditorPedido() {
     return codigoFinal;
   }
 
+  function excluirPecaNoPlano(codigo: number) {
+    setFormulario((atual) => {
+      const indice = atual.pecas.findIndex((peca) => Number(peca.codigo) === codigo);
+      if (indice < 0) return atual;
+      const peca = atual.pecas[indice];
+      const quantidade = Math.max(1, Math.round(Number(String(peca.quantidade).replace(',', '.')) || 1));
+      if (quantidade > 1) {
+        return {
+          ...atual,
+          pecas: atual.pecas.map((item, i) =>
+            i === indice ? { ...item, quantidade: String(quantidade - 1) } : item,
+          ),
+        };
+      }
+      if (atual.pecas.length === 1) {
+        return { ...atual, pecas: [pecaVazia(Number(peca.codigo) || 1, peca.materialCodigo)] };
+      }
+      return { ...atual, pecas: atual.pecas.filter((_, i) => i !== indice) };
+    });
+  }
+
   function proximoCodigo(pecas: PecaForm[]): number {
     return Math.max(0, ...pecas.map((p) => Number(p.codigo) || 0)) + 1;
   }
@@ -486,6 +507,7 @@ export function EditorPedido() {
           valorCorte={configCorte.valorCorte}
           editavel={podeEditar}
           aoAlterarMedidas={podeEditar ? alterarMedidasPecaNoPlano : undefined}
+          aoExcluirPeca={podeEditar ? excluirPecaNoPlano : undefined}
         />
       </section>
       </div>

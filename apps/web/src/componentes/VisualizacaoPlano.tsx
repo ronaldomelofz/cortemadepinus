@@ -152,6 +152,7 @@ export function VisualizacaoPlano({
   acoes,
   editavel = false,
   aoAlterarMedidas,
+  aoExcluirPeca,
 }: {
   materiais: MaterialVisual[];
   pecas: PecaVisual[];
@@ -160,6 +161,7 @@ export function VisualizacaoPlano({
   acoes?: ReactNode;
   editavel?: boolean;
   aoAlterarMedidas?: (alteracao: AlteracaoPecaNoPlano) => number;
+  aoExcluirPeca?: (codigo: number) => void;
 }) {
   const otimizado = useMemo(
     () => montarResultado(materiais, pecas, serraMm),
@@ -275,6 +277,45 @@ export function VisualizacaoPlano({
     }
     aplicarPecas(indiceFolha, organizadas);
     setAvisoLayout(null);
+  }
+
+  function excluirPecaSelecionada() {
+    if (!selecao || !pecaSelecionada) return;
+    const atual = chapasRef.current[selecao.folha];
+    if (!atual) return;
+    if (
+      !window.confirm(
+        `Excluir a peça ${pecaSelecionada.codigo} · ${pecaSelecionada.descricao} do plano e da lista?`,
+      )
+    ) {
+      return;
+    }
+    const restante = atual.pecas.filter((_, indice) => indice !== selecao.indice);
+    if (aoExcluirPeca) {
+      ignorarChave.current = 'pending';
+      aoExcluirPeca(pecaSelecionada.codigo);
+    }
+    setChapasManuais((lista) => {
+      const origem = lista ?? otimizado.chapas;
+      const proximo = origem.flatMap((item, indice) => {
+        if (indice !== selecao.folha) return [item];
+        if (restante.length === 0) return [];
+        const sentido = item.sentidoForcado ?? item.sentidoEntrada;
+        const remonta = remontarChapaDoPlano(item, restante, serraMm, true, sentido);
+        if (item.sentidoForcado) return [remonta];
+        const { sentidoForcado: _ignorado, ...resto } = remonta;
+        return [resto];
+      });
+      chapasRef.current = proximo;
+      return proximo;
+    });
+    setSelecao(null);
+    setDialogoAberto(false);
+    setAvisoLayout(null);
+    setFolha((atualFolha) => {
+      const total = Math.max(0, chapasRef.current.length - 1);
+      return Math.min(atualFolha, total);
+    });
   }
 
   function tentarColocar(
@@ -517,6 +558,7 @@ export function VisualizacaoPlano({
           aoGirar={girarPecaSelecionada}
           aoAplicarMedidas={aplicarMedidas}
           aoMover={(x, y) => moverPeca(selecao.folha, selecao.indice, x, y)}
+          aoExcluir={aoExcluirPeca ? excluirPecaSelecionada : undefined}
         />
       )}
     </div>
@@ -1054,6 +1096,7 @@ function DialogoPecaPlano({
   aoGirar,
   aoAplicarMedidas,
   aoMover,
+  aoExcluir,
 }: {
   peca: PecaNoPlano;
   veio: Veio;
@@ -1061,6 +1104,7 @@ function DialogoPecaPlano({
   aoGirar: () => void;
   aoAplicarMedidas: (largura: number, altura: number) => boolean;
   aoMover: (x: number, y: number) => boolean;
+  aoExcluir?: () => void;
 }) {
   const [largura, setLargura] = useState(String(peca.largura));
   const [altura, setAltura] = useState(String(peca.altura));
@@ -1241,7 +1285,14 @@ function DialogoPecaPlano({
           </div>
         </div>
 
-        <div className="mt-5 flex justify-end">
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
+          {aoExcluir ? (
+            <Botao type="button" variante="perigo" onClick={aoExcluir}>
+              Excluir peça
+            </Botao>
+          ) : (
+            <span />
+          )}
           <Botao type="button" variante="secundario" onClick={aoFechar}>
             Fechar
           </Botao>
