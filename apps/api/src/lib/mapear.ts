@@ -20,6 +20,7 @@ import type {
   ProdutoMdf,
   Role,
   StatusPedido,
+  TipoAnexo,
   Usuario,
   Veio,
 } from '@cortemadepinus/shared';
@@ -41,6 +42,12 @@ export function mapearUsuario(usuario: UsuarioPrisma): Usuario {
     telefone: usuario.telefone,
     empresa: usuario.empresa,
     documento: usuario.documento,
+    rua: usuario.rua,
+    numero: usuario.numero,
+    bairro: usuario.bairro,
+    cidade: usuario.cidade,
+    estado: usuario.estado,
+    cep: usuario.cep,
     role: usuario.role as Role,
     ativo: usuario.ativo,
     criadoEm: usuario.criadoEm.toISOString(),
@@ -56,6 +63,8 @@ export function mapearProduto(produto: ProdutoMdfPrisma): ProdutoMdf {
     espessura: produto.espessura,
     largura: produto.largura,
     comprimento: produto.comprimento,
+    valorUnitario: produto.valorUnitario,
+    permiteRotacao: produto.permiteRotacao,
     ativo: produto.ativo,
     criadoEm: produto.criadoEm.toISOString(),
     atualizadoEm: produto.atualizadoEm.toISOString(),
@@ -81,6 +90,7 @@ export function mapearMaterial(material: MaterialPrisma): Material {
     chapaAltura: material.chapaAltura,
     fornecidoPeloCliente: material.fornecidoPeloCliente,
     quantidadeChapas: material.quantidadeChapas,
+    permiteRotacao: material.permiteRotacao,
     ordem: material.ordem,
   };
 }
@@ -113,6 +123,7 @@ export function mapearAnexo(anexo: AnexoPrisma): Anexo {
     nomeArmazenado: anexo.nomeArmazenado,
     mimeType: anexo.mimeType,
     tamanho: anexo.tamanho,
+    tipo: anexo.tipo as TipoAnexo,
     criadoEm: anexo.criadoEm.toISOString(),
   };
 }
@@ -165,6 +176,7 @@ export function mapearPedido(pedido: PedidoCompleto): Pedido {
     criadoEm: pedido.criadoEm.toISOString(),
     atualizadoEm: pedido.atualizadoEm.toISOString(),
     enviadoEm: pedido.enviadoEm?.toISOString() ?? null,
+    pagamentoConfirmadoEm: pedido.pagamentoConfirmadoEm?.toISOString() ?? null,
     materiais: [...pedido.materiais].sort((a, b) => a.ordem - b.ordem).map(mapearMaterial),
     pecas: [...pedido.pecas].sort((a, b) => a.ordem - b.ordem).map(mapearPeca),
     anexos: pedido.anexos.map(mapearAnexo),

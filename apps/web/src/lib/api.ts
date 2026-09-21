@@ -9,22 +9,29 @@ import type {
 } from '@cortemadepinus/shared';
 
 const bruto = import.meta.env.VITE_API_URL;
+
+/**
+ * URL da API.
+ * - String vazia = mesma origem (site servido pela propria API no PC MadePinus).
+ * - Em dev sem VITE_API_URL = '' (proxy do Vite).
+ * - Em build de Netlify = URL HTTPS publica da API.
+ */
 export const API_URL = (
-  typeof bruto === 'string' && bruto.trim() !== ''
-    ? bruto
+  typeof bruto === 'string'
+    ? bruto.trim().replace(/\/$/, '')
     : import.meta.env.DEV
       ? ''
       : 'http://localhost:4000'
-).replace(/\/$/, '');
+);
 
 /**
  * Detecta o site publicado apontando para a API de desenvolvimento, o que
- * acontece quando VITE_API_URL nao foi definida no ambiente de build.
+ * acontece quando VITE_API_URL nao foi definida no ambiente de build do Netlify.
  */
 export const apiMalConfigurada =
   typeof window !== 'undefined' &&
-  API_URL.includes('localhost') &&
   API_URL.length > 0 &&
+  API_URL.includes('localhost') &&
   !['localhost', '127.0.0.1'].includes(window.location.hostname);
 
 const CHAVE_TOKEN = 'madepinus.token';
@@ -98,7 +105,12 @@ export interface Pagina<T> {
 
 export const api = {
   registrar: (body: unknown) =>
-    requisitar<{ token: string; usuario: Usuario }>('/api/auth/registrar', {
+    requisitar<{
+      usuario: Usuario;
+      aguardandoLiberacao?: boolean;
+      mensagem?: string;
+      token?: string;
+    }>('/api/auth/registrar', {
       method: 'POST',
       body,
       semAutenticacao: true,
@@ -127,8 +139,11 @@ export const api = {
   obterPedido: (id: string) =>
     requisitar<{ pedido: Pedido; resumo: ResumoPedido }>(`/api/pedidos/${id}`),
 
-  criarPedido: (body: unknown) =>
-    requisitar<{ pedido: Pedido; resumo: ResumoPedido }>('/api/pedidos', { method: 'POST', body }),
+  criarPedido: (body: unknown, clienteId?: string) =>
+    requisitar<{ pedido: Pedido; resumo: ResumoPedido }>('/api/pedidos', {
+      method: 'POST',
+      body: clienteId ? { ...(body as object), clienteId } : body,
+    }),
 
   atualizarPedido: (id: string, body: unknown) =>
     requisitar<{ pedido: Pedido; resumo: ResumoPedido }>(`/api/pedidos/${id}`, {
@@ -190,6 +205,28 @@ export const api = {
       body,
     }),
 
+  confirmarPagamento: (id: string) =>
+    requisitar<{ pedido: Pedido; resumo: ResumoPedido }>(`/api/admin/pedidos/${id}/confirmar-pagamento`, {
+      method: 'POST',
+    }),
+
+  listarPedidosOperador: (filtros: { status?: string; busca?: string; pagina?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (filtros.status) query.set('status', filtros.status);
+    if (filtros.busca) query.set('busca', filtros.busca);
+    if (filtros.pagina) query.set('pagina', String(filtros.pagina));
+    return requisitar<Pagina<PedidoComResumo>>(`/api/operador/pedidos?${query}`);
+  },
+
+  painelOperador: () =>
+    requisitar<{ contagemPorStatus: Record<StatusPedido, number> }>('/api/operador/painel'),
+
+  mudarStatusOperador: (id: string, body: { status: StatusPedido; nota?: string }) =>
+    requisitar<{ pedido: Pedido; resumo: ResumoPedido }>(`/api/operador/pedidos/${id}/status`, {
+      method: 'PATCH',
+      body,
+    }),
+
   listarClientes: (busca?: string) =>
     requisitar<{ itens: Array<Usuario & { totalPedidos: number }> }>(
       `/api/admin/clientes${busca ? `?busca=${encodeURIComponent(busca)}` : ''}`,
@@ -204,6 +241,12 @@ export const api = {
   atualizarCliente: (id: string, body: unknown) =>
     requisitar<{ usuario: Usuario }>(`/api/admin/clientes/${id}`, {
       method: 'PUT',
+      body,
+    }),
+
+  criarCliente: (body: unknown) =>
+    requisitar<{ usuario: Usuario; totalPedidos: number }>('/api/admin/clientes', {
+      method: 'POST',
       body,
     }),
 

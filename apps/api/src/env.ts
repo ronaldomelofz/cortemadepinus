@@ -30,6 +30,21 @@ const schema = z.object({
   ADMIN_EMAIL: z.string().email().default('admin@madepinus.com.br'),
   ADMIN_SENHA: z.string().min(8).default('MudarEsteAcesso1'),
   ADMIN_NOME: z.string().default('Central de Serviços MadePinus'),
+  OPERADOR_EMAIL: z.string().email().default('operador@madepinus.com.br'),
+  OPERADOR_SENHA: z.string().min(8).default('MudarOperador1'),
+  OPERADOR_NOME: z.string().default('Operador de Produção'),
+  /** Telefone do operador para alertas de novos pedidos (WhatsApp). */
+  OPERADOR_TELEFONE: z.string().optional().or(z.literal('')),
+  VENDEDOR_EMAIL: z.string().email().default('vendedor@madepinus.com.br'),
+  VENDEDOR_SENHA: z.string().min(8).default('MudarVendedor1'),
+  VENDEDOR_NOME: z.string().default('Vendedor MadePinus'),
+  WHATSAPP_ENABLED: z.preprocess(
+    (v) => v === true || v === 'true' || v === '1',
+    z.boolean(),
+  ).default(false),
+  WHATSAPP_API_URL: z.string().optional().or(z.literal('')),
+  WHATSAPP_INSTANCE: z.string().optional().or(z.literal('')),
+  WHATSAPP_API_KEY: z.string().optional().or(z.literal('')),
 });
 
 const resultado = schema.safeParse(process.env);
@@ -65,6 +80,11 @@ export const env = {
     .filter(Boolean),
   isProd: dados.NODE_ENV === 'production',
   ehPostgres: dados.DB_PROVIDER === 'postgresql',
+  WHATSAPP_ENABLED: dados.WHATSAPP_ENABLED,
+  WHATSAPP_API_URL: dados.WHATSAPP_API_URL || '',
+  WHATSAPP_INSTANCE: dados.WHATSAPP_INSTANCE || '',
+  WHATSAPP_API_KEY: dados.WHATSAPP_API_KEY || '',
+  OPERADOR_TELEFONE: dados.OPERADOR_TELEFONE || '',
 };
 
 function resolverPublico(): string | null {

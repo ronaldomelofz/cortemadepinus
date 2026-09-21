@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { importarPecas, type PecaImportada } from '@cortemadepinus/shared';
+import * as XLSX from 'xlsx';
 import { Aviso, Botao } from './ui';
 
 interface Props {
@@ -13,10 +14,32 @@ const EXEMPLO = `1,4,700,350,99000,Lateral armario
 2,2,1200,350,99000,Fundo armario
 3,6,397,700,99001,Porta`;
 
+function ehExcel(arquivo: File): boolean {
+  const nome = arquivo.name.toLowerCase();
+  return (
+    nome.endsWith('.xlsx') ||
+    nome.endsWith('.xls') ||
+    arquivo.type.includes('spreadsheet') ||
+    arquivo.type.includes('excel')
+  );
+}
+
+/** Converte a primeira planilha do Excel em CSV para o importador existente. */
+async function planilhaParaCsv(arquivo: File): Promise<string> {
+  const buffer = await arquivo.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: 'array', cellDates: false, raw: false });
+  const nomeAba = workbook.SheetNames[0];
+  if (!nomeAba) throw new Error('A planilha Excel está vazia');
+  const aba = workbook.Sheets[nomeAba];
+  return XLSX.utils.sheet_to_csv(aba, { FS: ',', blankrows: false });
+}
+
 export function ImportarPecas({ materialPadrao, aberto, aoFechar, aoConfirmar }: Props) {
   const [conteudo, setConteudo] = useState('');
   const [substituir, setSubstituir] = useState(false);
   const [nomeArquivo, setNomeArquivo] = useState<string | null>(null);
+  const [erroArquivo, setErroArquivo] = useState<string | null>(null);
+  const [lendo, setLendo] = useState(false);
 
   const resultado = useMemo(
     () => (conteudo.trim() ? importarPecas(conteudo, { materialPadrao: Number(materialPadrao) || 99000 }) : null),
@@ -26,13 +49,29 @@ export function ImportarPecas({ materialPadrao, aberto, aoFechar, aoConfirmar }:
   if (!aberto) return null;
 
   async function lerArquivo(arquivo: File) {
+    setErroArquivo(null);
     setNomeArquivo(arquivo.name);
-    setConteudo(await arquivo.text());
+    setLendo(true);
+    try {
+      if (ehExcel(arquivo)) {
+        setConteudo(await planilhaParaCsv(arquivo));
+      } else {
+        setConteudo(await arquivo.text());
+      }
+    } catch (falha) {
+      setConteudo('');
+      setErroArquivo(
+        falha instanceof Error ? falha.message : 'Não foi possível ler o arquivo. Use CSV, TXT ou Excel (.xlsx).',
+      );
+    } finally {
+      setLendo(false);
+    }
   }
 
   function fechar() {
     setConteudo('');
     setNomeArquivo(null);
+    setErroArquivo(null);
     aoFechar();
   }
 
@@ -43,7 +82,7 @@ export function ImportarPecas({ materialPadrao, aberto, aoFechar, aoConfirmar }:
           <div>
             <h2 className="text-lg font-bold text-stone-900">Importar lista de peças</h2>
             <p className="mt-1 text-sm text-stone-500">
-              Aceita arquivos CSV/TXT no layout do Corte MadePinus ou dados copiados do Excel.
+              Aceita Excel (.xlsx/.xls), CSV/TXT no layout do Corte MadePinus ou dados copiados do Excel.
             </p>
           </div>
           <button
@@ -65,8 +104,8 @@ export function ImportarPecas({ materialPadrao, aberto, aoFechar, aoConfirmar }:
             </code>
           </p>
           <p className="text-xs">
-            O separador (vírgula, ponto e vírgula ou TAB) é detectado automaticamente. Linhas iniciadas por
-            &quot;/&quot; ou &quot;#&quot; são ignoradas, assim como o cabeçalho.
+            No Excel, use a primeira aba. O separador (vírgula, ponto e vírgula ou TAB) é detectado
+            automaticamente. Linhas iniciadas por &quot;/&quot; ou &quot;#&quot; são ignoradas, assim como o cabeçalho.
           </p>
         </Aviso>
 
@@ -75,26 +114,37 @@ export function ImportarPecas({ materialPadrao, aberto, aoFechar, aoConfirmar }:
             <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M12 16V4m0 0L8 8m4-4l4 4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" strokeLinecap="round" />
             </svg>
-            Escolher arquivo
+            {lendo ? 'Lendo arquivo…' : 'Escolher arquivo'}
             <input
               type="file"
-              accept=".csv,.txt,text/csv,text/plain"
+              accept=".csv,.txt,.xlsx,.xls,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
               className="hidden"
+              disabled={lendo}
               onChange={(e) => {
                 const arquivo = e.target.files?.[0];
                 if (arquivo) void lerArquivo(arquivo);
+                e.target.value = '';
               }}
             />
           </label>
           {nomeArquivo && <span className="text-xs text-stone-500">{nomeArquivo}</span>}
           <button
             type="button"
-            onClick={() => setConteudo(EXEMPLO)}
+            onClick={() => {
+              setErroArquivo(null);
+              setConteudo(EXEMPLO);
+            }}
             className="text-xs font-semibold text-madeira-700 hover:underline"
           >
             usar exemplo
           </button>
         </div>
+
+        {erroArquivo && (
+          <div className="mt-3">
+            <Aviso tipo="erro">{erroArquivo}</Aviso>
+          </div>
+        )}
 
         <textarea
           className="campo mt-3 min-h-40 font-mono text-xs"
@@ -149,7 +199,7 @@ export function ImportarPecas({ materialPadrao, aberto, aoFechar, aoConfirmar }:
           </Botao>
           <Botao
             type="button"
-            disabled={!resultado || resultado.pecas.length === 0}
+            disabled={!resultado || resultado.pecas.length === 0 || lendo}
             onClick={() => {
               if (resultado) aoConfirmar(resultado.pecas, substituir);
               fechar();

@@ -4,19 +4,27 @@ import {
   formatarData,
   formatarM2,
   pedidoEditavelPeloCliente,
+  pedidoProntoParaEnvio,
   STATUS_LABEL,
   STATUS_PEDIDO,
   type StatusPedido,
 } from '@cortemadepinus/shared';
 import { Aviso, Botao, Carregando, EtiquetaStatus, Metrica, Vazio } from '../componentes/ui';
 import { api, ErroApi, type PedidoComResumo } from '../lib/api';
+import { basePedidosPorPapel } from '../lib/destino';
+import { confirmarEnvioParaCentral } from '../lib/pedidoCliente';
+import { useSessao } from '../lib/sessao';
 
 export function MeusPedidos() {
+  const { usuario } = useSessao();
+  const base = basePedidosPorPapel(usuario?.role);
   const [pedidos, setPedidos] = useState<PedidoComResumo[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [status, setStatus] = useState<'' | StatusPedido>('');
   const [busca, setBusca] = useState('');
+  const [ocupadoId, setOcupadoId] = useState<string | null>(null);
+  const [erroAcao, setErroAcao] = useState<string | null>(null);
 
   useEffect(() => {
     setCarregando(true);
@@ -39,6 +47,54 @@ export function MeusPedidos() {
     [pedidos],
   );
 
+  async function enviarParaCentral(pedido: PedidoComResumo) {
+    if (!pedidoProntoParaEnvio(pedido.status, pedido.resumo.totalPecas, pedido.titulo)) {
+      setErroAcao('Complete o plano com o nome do projeto e ao menos uma peça antes de enviar.');
+      return;
+    }
+    if (!confirmarEnvioParaCentral(pedido.resumo.totalPecas)) return;
+
+    setErroAcao(null);
+    setOcupadoId(pedido.id);
+    try {
+      const resposta = await api.enviarPedido(pedido.id);
+      setPedidos((lista) =>
+        lista.map((item) =>
+          item.id === pedido.id ? { ...item, ...resposta.pedido, resumo: resposta.resumo } : item,
+        ),
+      );
+    } catch (falha) {
+      setErroAcao(falha instanceof ErroApi ? falha.message : 'Não foi possível enviar o plano');
+    } finally {
+      setOcupadoId(null);
+    }
+  }
+
+  async function excluirRascunho(pedido: PedidoComResumo) {
+    if (!pedidoEditavelPeloCliente(pedido.status)) {
+      setErroAcao('Só é possível excluir pedidos que ainda não foram enviados para a central.');
+      return;
+    }
+    if (
+      !confirm(
+        `Excluir o rascunho #${String(pedido.numero).padStart(5, '0')} (${pedido.titulo})? Esta ação não pode ser desfeita.`,
+      )
+    ) {
+      return;
+    }
+
+    setErroAcao(null);
+    setOcupadoId(pedido.id);
+    try {
+      await api.excluirPedido(pedido.id);
+      setPedidos((lista) => lista.filter((item) => item.id !== pedido.id));
+    } catch (falha) {
+      setErroAcao(falha instanceof ErroApi ? falha.message : 'Não foi possível excluir o rascunho');
+    } finally {
+      setOcupadoId(null);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -48,7 +104,7 @@ export function MeusPedidos() {
             Acompanhe o andamento de cada pedido enviado à central de serviços.
           </p>
         </div>
-        <Link to="/app/novo">
+        <Link to={`${base}/novo`}>
           <Botao>+ Novo plano de corte</Botao>
         </Link>
       </div>
@@ -62,7 +118,7 @@ export function MeusPedidos() {
       <div className="flex flex-wrap gap-3">
         <input
           className="campo max-w-xs"
-          placeholder="Buscar por título ou ambiente"
+          placeholder="Buscar por nome do projeto ou ambiente"
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
         />
@@ -81,6 +137,14 @@ export function MeusPedidos() {
       </div>
 
       {erro && <Aviso tipo="erro">{erro}</Aviso>}
+      {erroAcao && <Aviso tipo="erro">{erroAcao}</Aviso>}
+
+      {indicadores.rascunhos > 0 && (
+        <Aviso tipo="atencao" titulo="Rascunhos aguardando envio">
+          Você tem {indicadores.rascunhos} plano(s) em rascunho. Revise as peças e clique em{' '}
+          <strong>Enviar para a central</strong> para que a MadePinus analise o pedido.
+        </Aviso>
+      )}
 
       {carregando ? (
         <Carregando />
@@ -89,7 +153,7 @@ export function MeusPedidos() {
           titulo="Nenhum pedido por aqui"
           descricao="Crie seu primeiro plano de corte: cadastre os materiais, lance as medidas e envie para a nossa central."
           acao={
-            <Link to="/app/novo">
+            <Link to={`${base}/novo`}>
               <Botao>Criar plano de corte</Botao>
             </Link>
           }
@@ -98,12 +162,13 @@ export function MeusPedidos() {
         <div className="grid gap-3">
           {pedidos.map((pedido) => {
             const rascunho = pedidoEditavelPeloCliente(pedido.status);
+            const ocupado = ocupadoId === pedido.id;
             return (
               <div
                 key={pedido.id}
                 className="cartao flex flex-wrap items-center gap-4 p-4 transition hover:border-madeira-300 hover:shadow-md"
               >
-                <Link to={`/app/pedidos/${pedido.id}`} className="min-w-56 flex-1">
+                <Link to={`${base}/pedidos/${pedido.id}`} className="min-w-56 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="rounded bg-stone-100 px-2 py-0.5 text-xs font-bold tabular-nums text-stone-600">
                       #{String(pedido.numero).padStart(5, '0')}
@@ -136,13 +201,32 @@ export function MeusPedidos() {
 
                 <div className="flex flex-wrap gap-2">
                   {rascunho && (
-                    <Link to={`/app/pedidos/${pedido.id}/editar`}>
-                      <Botao>Editar</Botao>
-                    </Link>
+                    <>
+                      <Link to={`${base}/pedidos/${pedido.id}/editar`}>
+                        <Botao variante="secundario" disabled={ocupado}>
+                          Editar
+                        </Botao>
+                      </Link>
+                      <Botao carregando={ocupado} onClick={() => void enviarParaCentral(pedido)}>
+                        Enviar para a central
+                      </Botao>
+                    </>
                   )}
-                  <Link to={`/app/pedidos/${pedido.id}`}>
-                    <Botao variante="secundario">{rascunho ? 'Ver' : 'Abrir'}</Botao>
+                  <Link to={`${base}/pedidos/${pedido.id}`}>
+                    <Botao variante="secundario" disabled={ocupado}>
+                      {rascunho ? 'Ver' : 'Abrir'}
+                    </Botao>
                   </Link>
+                  {rascunho && (
+                    <Botao
+                      variante="perigo"
+                      carregando={ocupado}
+                      onClick={() => void excluirRascunho(pedido)}
+                      title="Excluir este rascunho. Indisponível após o envio à central."
+                    >
+                      Excluir
+                    </Botao>
+                  )}
                 </div>
               </div>
             );

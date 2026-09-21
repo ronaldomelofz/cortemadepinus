@@ -6,17 +6,91 @@ import { env } from '../src/env';
 const prisma = new PrismaClient({ datasources: { db: { url: env.DATABASE_URL } } });
 
 async function main() {
-  const admin = await prisma.usuario.upsert({
-    where: { email: env.ADMIN_EMAIL },
-    update: { role: 'ADMIN', ativo: true },
+  const senhaHash = await bcrypt.hash(env.ADMIN_SENHA, 12);
+  const emailAdmin = env.ADMIN_EMAIL.toLowerCase();
+
+  const contaComEmail = await prisma.usuario.findUnique({ where: { email: emailAdmin } });
+  const adminAnterior = await prisma.usuario.findFirst({
+    where: { role: 'ADMIN', NOT: { email: emailAdmin } },
+  });
+
+  const admin = contaComEmail
+    ? await prisma.usuario.update({
+        where: { email: emailAdmin },
+        data: {
+          nome: env.ADMIN_NOME,
+          senhaHash,
+          role: 'ADMIN',
+          ativo: true,
+        },
+      })
+    : adminAnterior
+      ? await prisma.usuario.update({
+          where: { id: adminAnterior.id },
+          data: {
+            email: emailAdmin,
+            nome: env.ADMIN_NOME,
+            senhaHash,
+            role: 'ADMIN',
+            ativo: true,
+          },
+        })
+      : await prisma.usuario.create({
+          data: {
+            nome: env.ADMIN_NOME,
+            email: emailAdmin,
+            senhaHash,
+            role: 'ADMIN',
+          },
+        });
+
+  if (adminAnterior && adminAnterior.id !== admin.id) {
+    await prisma.usuario.update({
+      where: { id: adminAnterior.id },
+      data: { role: 'CLIENTE', ativo: false },
+    });
+    console.log(`[seed] Admin anterior desativado: ${adminAnterior.email}`);
+  }
+
+  console.log(`[seed] Administrador pronto: ${admin.email}`);
+
+  const senhaOperador = await bcrypt.hash(env.OPERADOR_SENHA, 12);
+  const emailOperador = env.OPERADOR_EMAIL.toLowerCase();
+  const operador = await prisma.usuario.upsert({
+    where: { email: emailOperador },
     create: {
-      nome: env.ADMIN_NOME,
-      email: env.ADMIN_EMAIL,
-      senhaHash: await bcrypt.hash(env.ADMIN_SENHA, 12),
-      role: 'ADMIN',
+      nome: env.OPERADOR_NOME,
+      email: emailOperador,
+      senhaHash: senhaOperador,
+      role: 'OPERADOR',
+    },
+    update: {
+      nome: env.OPERADOR_NOME,
+      senhaHash: senhaOperador,
+      role: 'OPERADOR',
+      ativo: true,
     },
   });
-  console.log(`[seed] Administrador pronto: ${admin.email}`);
+  console.log(`[seed] Operador pronto: ${operador.email}`);
+
+  const senhaVendedor = await bcrypt.hash(env.VENDEDOR_SENHA, 12);
+  const emailVendedor = env.VENDEDOR_EMAIL.toLowerCase();
+  const vendedor = await prisma.usuario.upsert({
+    where: { email: emailVendedor },
+    create: {
+      nome: env.VENDEDOR_NOME,
+      email: emailVendedor,
+      senhaHash: senhaVendedor,
+      role: 'VENDEDOR',
+    },
+    update: {
+      nome: env.VENDEDOR_NOME,
+      senhaHash: senhaVendedor,
+      role: 'VENDEDOR',
+      ativo: true,
+    },
+  });
+  console.log(`[seed] Vendedor pronto: ${vendedor.email}`);
 
   await prisma.configuracao.upsert({
     where: { id: 'padrao' },
@@ -33,28 +107,43 @@ async function main() {
           nome: 'MDF Branco TX 15 mm',
           cor: 'Branco TX',
           espessura: 15,
-          largura: 1840,
+          largura: 1850,
           comprimento: 2750,
+          valorUnitario: 0,
+          permiteRotacao: true,
         },
         {
           codigo: 99001,
           nome: 'MDF Branco TX 18 mm',
           cor: 'Branco TX',
           espessura: 18,
-          largura: 1840,
+          largura: 1850,
           comprimento: 2750,
+          valorUnitario: 0,
+          permiteRotacao: true,
         },
         {
           codigo: 99002,
           nome: 'MDF Amadeirado 15 mm',
           cor: 'Carvalho Hanover',
           espessura: 15,
-          largura: 1840,
+          largura: 1850,
           comprimento: 2750,
+          valorUnitario: 0,
+          permiteRotacao: false,
         },
       ],
     });
     console.log('[seed] Produtos MDF iniciais cadastrados.');
+  } else {
+    await prisma.produtoMdf.updateMany({
+      where: { nome: { contains: 'Amadeirado' } },
+      data: { permiteRotacao: false },
+    });
+    await prisma.produtoMdf.updateMany({
+      where: { largura: 1840 },
+      data: { largura: 1850 },
+    });
   }
 
   if (env.isProd) {
@@ -101,7 +190,7 @@ async function main() {
             espessura: 15,
             cor: 'Branco TX',
             chapaLargura: 2750,
-            chapaAltura: 1840,
+            chapaAltura: 1850,
             fornecidoPeloCliente: false,
             ordem: 0,
           },
@@ -111,7 +200,7 @@ async function main() {
             espessura: 18,
             cor: 'Carvalho Hanover',
             chapaLargura: 2750,
-            chapaAltura: 1840,
+            chapaAltura: 1850,
             fornecidoPeloCliente: false,
             ordem: 1,
           },

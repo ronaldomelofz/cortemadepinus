@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   formatarM2,
   formatarMoeda,
@@ -19,6 +19,8 @@ import { TabelaPecas } from '../componentes/TabelaPecas';
 import { Aviso, Botao, Carregando, Metrica } from '../componentes/ui';
 import { VisualizacaoPlano, type AlteracaoPecaNoPlano } from '../componentes/VisualizacaoPlano';
 import { api, ErroApi } from '../lib/api';
+import { basePedidosPorPapel } from '../lib/destino';
+import { confirmarEnvioParaCentral } from '../lib/pedidoCliente';
 import {
   aplicarCatalogo,
   formularioInicial,
@@ -31,11 +33,18 @@ import {
   type PecaForm,
   type PedidoForm,
 } from '../lib/formularioPedido';
+import { useSessao } from '../lib/sessao';
+
+type EstadoNavegacaoEditor = { mensagemOk?: string };
 
 export function EditorPedido() {
   const { id } = useParams<{ id: string }>();
   const navegar = useNavigate();
-  const [formulario, setFormulario] = useState<PedidoForm>(formularioInicial);
+  const location = useLocation();
+  const { usuario } = useSessao();
+  const base = basePedidosPorPapel(usuario?.role);
+  const ehAdmin = usuario?.role === 'ADMIN';
+  const [formulario, setFormulario] = useState<PedidoForm>(() => formularioInicial());
   const [carregando, setCarregando] = useState(Boolean(id));
   const [salvando, setSalvando] = useState(false);
   const [reabrindo, setReabrindo] = useState(false);
@@ -47,13 +56,55 @@ export function EditorPedido() {
   const [statusPedido, setStatusPedido] = useState<StatusPedido | null>(id ? null : 'RASCUNHO');
   const [produtos, setProdutos] = useState<ProdutoMdf[]>([]);
   const [catalogoPronto, setCatalogoPronto] = useState(false);
+  const [clienteId, setClienteId] = useState('');
+  const [clientes, setClientes] = useState<Array<{ id: string; nome: string; empresa?: string | null }>>([]);
   const [configCorte, setConfigCorte] = useState<ConfiguracaoCorte>({
     serraMm: SERRA_PADRAO_MM,
     valorCorte: VALOR_CORTE_PADRAO,
   });
+  const [chavesDestaque, setChavesDestaque] = useState<Set<string>>(() => new Set());
 
   const podeEditar = !statusPedido || pedidoEditavelPeloCliente(statusPedido);
   const podeReabrir = Boolean(statusPedido && pedidoReabivelPeloCliente(statusPedido));
+
+  function destacarChaves(chaves: string[]) {
+    setChavesDestaque(new Set(chaves));
+    window.setTimeout(() => {
+      setChavesDestaque((atual) => {
+        const proximo = new Set(atual);
+        chaves.forEach((chave) => proximo.delete(chave));
+        return proximo;
+      });
+    }, 12_000);
+  }
+
+  /** Grava o plano em Meus pedidos e deixa o editor pronto para o próximo. */
+  function prepararNovoPlano(mensagem: string) {
+    setStatusPedido('RASCUNHO');
+    setErrosPecas({});
+    setErrosGerais([]);
+    setErroGeral(null);
+    setChavesDestaque(new Set());
+    setClienteId('');
+    setFormulario(aplicarCatalogo(formularioInicial(), produtos));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    if (id) {
+      navegar(`${base}/novo`, {
+        replace: true,
+        state: { mensagemOk: mensagem } satisfies EstadoNavegacaoEditor,
+      });
+      return;
+    }
+    setMensagemOk(mensagem);
+  }
+
+  useEffect(() => {
+    const estado = location.state as EstadoNavegacaoEditor | null;
+    if (!estado?.mensagemOk) return;
+    setMensagemOk(estado.mensagemOk);
+    navegar(location.pathname, { replace: true, state: null });
+  }, [location.pathname, location.state, navegar]);
 
   useEffect(() => {
     let cancelado = false;
@@ -102,11 +153,19 @@ export function EditorPedido() {
     };
   }, [id]);
 
+  useEffect(() => {
+    if (!ehAdmin || id) return;
+    api
+      .listarClientes()
+      .then((resposta) => setClientes(resposta.itens))
+      .catch(() => setClientes([]));
+  }, [ehAdmin, id]);
+
   const resumo = useMemo(() => resumirFormulario(formulario), [formulario]);
-  const cortes = useMemo(
-    () => resumirCortes(formulario, configCorte),
-    [formulario, configCorte],
-  );
+  const cortes = useMemo(() => {
+    const precosPorCodigo = new Map(produtos.map((p) => [p.codigo, p.valorUnitario]));
+    return resumirCortes(formulario, { ...configCorte, precosPorCodigo });
+  }, [formulario, configCorte, produtos]);
 
   /* ----------------------------- Peças ----------------------------- */
 
@@ -180,19 +239,22 @@ export function EditorPedido() {
   }
 
   function adicionarPecas(quantidade = 1) {
+    let geradas: PecaForm[] = [];
     setFormulario((atual) => {
       const material = atual.materiais[0]?.codigo ?? '99000';
-      const novas: PecaForm[] = [];
+      geradas = [];
       let codigo = proximoCodigo(atual.pecas);
       for (let i = 0; i < quantidade; i += 1) {
-        novas.push(pecaVazia(codigo, material));
+        geradas.push(pecaVazia(codigo, material));
         codigo += 1;
       }
-      return { ...atual, pecas: [...atual.pecas, ...novas] };
+      return { ...atual, pecas: [...atual.pecas, ...geradas] };
     });
+    destacarChaves(geradas.map((peca) => peca.chave));
   }
 
   function duplicarPeca(indice: number) {
+    let chaveNova = '';
     setFormulario((atual) => {
       const original = atual.pecas[indice];
       const copia: PecaForm = {
@@ -200,10 +262,12 @@ export function EditorPedido() {
         chave: novaChave(),
         codigo: String(proximoCodigo(atual.pecas)),
       };
+      chaveNova = copia.chave;
       const pecas = [...atual.pecas];
       pecas.splice(indice + 1, 0, copia);
       return { ...atual, pecas };
     });
+    if (chaveNova) destacarChaves([chaveNova]);
   }
 
   function removerPeca(indice: number) {
@@ -214,14 +278,17 @@ export function EditorPedido() {
   }
 
   function aplicarImportacao(importadas: PecaImportada[], substituir: boolean) {
+    const novasChaves: string[] = [];
     setFormulario((atual) => {
       const conhecidos = new Set(atual.materiais.map((m) => m.codigo));
       const padrao = atual.materiais[0]?.codigo ?? '';
 
       const convertidas: PecaForm[] = importadas.map((peca) => {
         const codigo = String(peca.materialCodigo);
+        const chave = novaChave();
+        novasChaves.push(chave);
         return {
-          chave: novaChave(),
+          chave,
           codigo: String(peca.codigo),
           materialCodigo: conhecidos.has(codigo) ? codigo : padrao,
           quantidade: String(peca.quantidade),
@@ -243,6 +310,7 @@ export function EditorPedido() {
 
       return { ...atual, pecas: [...anteriores, ...convertidas] };
     });
+    destacarChaves(novasChaves);
     setMensagemOk(`${importadas.length} peça(s) importada(s).`);
   }
 
@@ -278,17 +346,28 @@ export function EditorPedido() {
     const payload = validar();
     if (!payload) return;
 
+    if (enviar && !confirmarEnvioParaCentral(payload.pecas.reduce((t, p) => t + p.quantidade, 0))) {
+      return;
+    }
+
     setSalvando(true);
     try {
-      const resposta = id ? await api.atualizarPedido(id, payload) : await api.criarPedido(payload);
+      const resposta = id
+        ? await api.atualizarPedido(id, payload)
+        : await api.criarPedido(payload, ehAdmin && clienteId ? clienteId : undefined);
       setStatusPedido(resposta.pedido.status);
+
       if (enviar) {
         await api.enviarPedido(resposta.pedido.id);
-        navegar(`/app/pedidos/${resposta.pedido.id}`, { replace: true });
+        prepararNovoPlano(
+          'Pedido enviado para a central. Ele já está em Meus pedidos — monte o próximo plano abaixo.',
+        );
         return;
       }
-      setMensagemOk('Rascunho salvo. Você pode continuar editando até enviar para a central.');
-      if (!id) navegar(`/app/pedidos/${resposta.pedido.id}/editar`, { replace: true });
+
+      prepararNovoPlano(
+        'Rascunho salvo em Meus pedidos. A tela está pronta para um novo plano de corte.',
+      );
     } catch (falha) {
       setErroGeral(falha instanceof ErroApi ? falha.message : 'Não foi possível salvar o pedido');
     } finally {
@@ -342,7 +421,7 @@ export function EditorPedido() {
             </>
           )}
           {!podeEditar && !podeReabrir && id && (
-            <Botao variante="secundario" onClick={() => navegar(`/app/pedidos/${id}`)}>
+            <Botao variante="secundario" onClick={() => navegar(`${base}/pedidos/${id}`)}>
               Voltar ao pedido
             </Botao>
           )}
@@ -372,8 +451,26 @@ export function EditorPedido() {
       <section className="cartao p-5">
         <h2 className="mb-4 text-base font-bold text-stone-900">1. Dados do projeto</h2>
         <div className="grid gap-4 md:grid-cols-3">
+          {ehAdmin && !id && (
+            <label className="block md:col-span-3">
+              <span className="rotulo">Cliente do pedido (opcional)</span>
+              <select
+                className="campo"
+                value={clienteId}
+                onChange={(e) => setClienteId(e.target.value)}
+              >
+                <option value="">Central / sem cliente vinculado</option>
+                {clientes.map((cliente) => (
+                  <option key={cliente.id} value={cliente.id}>
+                    {cliente.nome}
+                    {cliente.empresa ? ` · ${cliente.empresa}` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="block md:col-span-2">
-            <span className="rotulo">Título do projeto *</span>
+            <span className="rotulo">Nome do projeto *</span>
             <input
               className="campo"
               placeholder="Ex.: Cozinha apartamento 302"
@@ -390,24 +487,6 @@ export function EditorPedido() {
               onChange={(e) => setFormulario((a) => ({ ...a, ambiente: e.target.value }))}
             />
           </label>
-          <label className="block">
-            <span className="rotulo">Prazo desejado</span>
-            <input
-              className="campo"
-              placeholder="Ex.: 5 dias úteis"
-              value={formulario.prazoDesejado}
-              onChange={(e) => setFormulario((a) => ({ ...a, prazoDesejado: e.target.value }))}
-            />
-          </label>
-          <label className="block md:col-span-2">
-            <span className="rotulo">Observações para a central</span>
-            <textarea
-              className="campo min-h-20"
-              placeholder="Instruções de corte, retirada ou entrega..."
-              value={formulario.observacoes}
-              onChange={(e) => setFormulario((a) => ({ ...a, observacoes: e.target.value }))}
-            />
-          </label>
         </div>
       </section>
 
@@ -422,7 +501,7 @@ export function EditorPedido() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Botao type="button" variante="secundario" onClick={() => setImportando(true)}>
-              Importar CSV/TXT
+              Importar CSV/TXT/Excel
             </Botao>
             <Botao
               type="button"
@@ -440,7 +519,9 @@ export function EditorPedido() {
         <TabelaPecas
           pecas={formulario.pecas}
           materiais={formulario.materiais}
+          produtosCatalogo={produtos}
           erros={errosPecas}
+          chavesDestaque={chavesDestaque}
           aoAlterar={alterarPeca}
           aoRemover={removerPeca}
           aoDuplicar={duplicarPeca}
@@ -459,10 +540,33 @@ export function EditorPedido() {
           <Metrica rotulo="Peças" valor={resumo.totalPecas} detalhe="somando quantidades" />
           <Metrica rotulo="Área total" valor={formatarM2(resumo.areaTotalM2)} />
           <Metrica
-            rotulo="Valor estimado dos cortes"
-            valor={formatarMoeda(cortes.valorEstimado)}
-            detalhe={`${cortes.totalCortes} corte(s) × ${formatarMoeda(cortes.valorUnitario)}`}
+            rotulo="Chapas (estimativa)"
+            valor={cortes.chapasEstimadas}
+            detalhe="para cálculo do material"
           />
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-madeira-200 bg-madeira-50/60 p-4">
+          <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-madeira-900">
+            Orçamento estimado
+          </h3>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Metrica
+              rotulo="Valor dos cortes"
+              valor={formatarMoeda(cortes.valorCortes)}
+              detalhe={`${cortes.totalCortes} corte(s) × ${formatarMoeda(cortes.valorPorCorte)}`}
+            />
+            <Metrica
+              rotulo="Valor dos produtos"
+              valor={formatarMoeda(cortes.valorProdutos)}
+              detalhe={`${cortes.chapasEstimadas} chapa(s) × valor unitário`}
+            />
+            <Metrica
+              rotulo="Valor total"
+              valor={formatarMoeda(cortes.valorTotal)}
+              detalhe="cortes + produtos"
+            />
+          </div>
         </div>
 
         {resumo.porMaterial.length > 0 && (
@@ -473,29 +577,40 @@ export function EditorPedido() {
                   <th className="px-3 py-2 text-left font-semibold">Material</th>
                   <th className="px-3 py-2 text-right font-semibold">Peças</th>
                   <th className="px-3 py-2 text-right font-semibold">Área</th>
-                  <th className="px-3 py-2 text-right font-semibold">Chapas (estimativa)</th>
+                  <th className="px-3 py-2 text-right font-semibold">Chapas</th>
+                  <th className="px-3 py-2 text-right font-semibold">Valor unit.</th>
+                  <th className="px-3 py-2 text-right font-semibold">Subtotal</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100 bg-white">
-                {resumo.porMaterial.map((linha) => (
-                  <tr key={linha.codigo}>
-                    <td className="px-3 py-2">
-                      <span className="font-medium text-stone-800">{linha.descricao}</span>
-                      <span className="ml-2 text-xs text-stone-400">cód. {linha.codigo}</span>
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{linha.totalPecas}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{formatarM2(linha.areaM2)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{linha.chapasEstimadas}</td>
-                  </tr>
-                ))}
+                {resumo.porMaterial.map((linha) => {
+                  const codigoNum = Number(linha.codigo);
+                  const valorUnitario = produtos.find((p) => p.codigo === codigoNum)?.valorUnitario ?? 0;
+                  const subtotal = linha.chapasEstimadas * valorUnitario;
+                  return (
+                    <tr key={linha.codigo}>
+                      <td className="px-3 py-2">
+                        <span className="font-medium text-stone-800">{linha.descricao}</span>
+                        <span className="ml-2 text-xs text-stone-400">cód. {linha.codigo}</span>
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{linha.totalPecas}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatarM2(linha.areaM2)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{linha.chapasEstimadas}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatarMoeda(valorUnitario)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium text-stone-800">
+                        {formatarMoeda(subtotal)}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
 
         <p className="mt-3 text-xs text-stone-500">
-          A estimativa de chapas considera 85% de aproveitamento. O desenho abaixo é uma prévia para
-          conferência; o número exato sai da otimização do Corte MadePinus na central.
+          A estimativa de chapas considera 85% de aproveitamento. O valor dos produtos usa o preço
+          unitário cadastrado pela central. O orçamento oficial pode ser ajustado depois pela equipe.
         </p>
       </section>
 
@@ -513,7 +628,7 @@ export function EditorPedido() {
       </div>
 
       <div className="flex flex-wrap justify-end gap-3 pb-6">
-        <Botao variante="secundario" onClick={() => navegar(id ? `/app/pedidos/${id}` : '/app')}>
+        <Botao variante="secundario" onClick={() => navegar(id ? `${base}/pedidos/${id}` : base)}>
           Voltar
         </Botao>
         {podeEditar && (

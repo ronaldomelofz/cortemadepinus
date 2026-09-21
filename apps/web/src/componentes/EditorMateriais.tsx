@@ -1,4 +1,5 @@
 import { CHAPAS_PADRAO, ESPESSURAS_PADRAO, type MaterialForm } from '../lib/formularioPedido';
+import { SeletorProdutoBusca } from './SeletorMaterialBusca';
 import { Botao } from './ui';
 import type { ProdutoMdf } from '@cortemadepinus/shared';
 
@@ -9,10 +10,6 @@ interface Props {
   aoAdicionar: () => void;
   aoRemover: (indice: number) => void;
   aoEscolherProduto?: (indice: number, produto: ProdutoMdf) => void;
-}
-
-function rotuloProduto(produto: ProdutoMdf): string {
-  return `${produto.nome} · ${produto.cor} · ${produto.espessura} mm · ${produto.comprimento}×${produto.largura}`;
 }
 
 export function EditorMateriais({
@@ -48,21 +45,14 @@ export function EditorMateriais({
           {produtos.length > 0 && aoEscolherProduto && (
             <label className="mb-3 block">
               <span className="rotulo">Escolher MDF cadastrado</span>
-              <select
-                className="campo"
-                value={produtos.some((p) => String(p.codigo) === material.codigo) ? material.codigo : ''}
-                onChange={(e) => {
-                  const produto = produtos.find((p) => String(p.codigo) === e.target.value);
+              <SeletorProdutoBusca
+                produtos={produtos}
+                valor={produtos.some((p) => String(p.codigo) === material.codigo) ? material.codigo : ''}
+                onChange={(codigo) => {
+                  const produto = produtos.find((p) => String(p.codigo) === codigo);
                   if (produto) aoEscolherProduto(indice, produto);
                 }}
-              >
-                <option value="">Selecionar produto da central…</option>
-                {produtos.map((produto) => (
-                  <option key={produto.id} value={String(produto.codigo)}>
-                    {rotuloProduto(produto)}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
           )}
 

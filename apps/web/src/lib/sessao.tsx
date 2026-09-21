@@ -7,7 +7,11 @@ interface Sessao {
   usuario: Usuario | null;
   carregando: boolean;
   entrar: (email: string, senha: string) => Promise<Usuario>;
-  cadastrar: (dados: Record<string, unknown>) => Promise<Usuario>;
+  cadastrar: (dados: Record<string, unknown>) => Promise<{
+    usuario: Usuario;
+    aguardandoLiberacao: boolean;
+    mensagem: string;
+  }>;
   sair: () => void;
   atualizarUsuario: (usuario: Usuario) => void;
 }
@@ -38,10 +42,15 @@ export function ProvedorSessao({ children }: { children: ReactNode }) {
   }, []);
 
   const cadastrar = useCallback(async (dados: Record<string, unknown>) => {
-    const { token, usuario: perfil } = await api.registrar(dados);
-    armazenamento.gravarToken(token);
-    setUsuario(perfil);
-    return perfil;
+    const resposta = await api.registrar(dados);
+    // Cadastro público não inicia sessão — admin precisa liberar o acesso.
+    return {
+      usuario: resposta.usuario,
+      aguardandoLiberacao: resposta.aguardandoLiberacao !== false,
+      mensagem:
+        resposta.mensagem ??
+        'Conta criada. Aguarde a liberação da central MadePinus para entrar no sistema.',
+    };
   }, []);
 
   const sair = useCallback(() => {

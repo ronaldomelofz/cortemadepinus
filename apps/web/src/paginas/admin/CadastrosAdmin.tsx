@@ -16,6 +16,8 @@ interface FormProduto {
   espessura: string;
   largura: string;
   comprimento: string;
+  valorUnitario: string;
+  permiteRotacao: boolean;
 }
 
 const produtoVazio = (): FormProduto => ({
@@ -23,12 +25,23 @@ const produtoVazio = (): FormProduto => ({
   nome: '',
   cor: '',
   espessura: '15',
-  largura: '1840',
+  largura: '1850',
   comprimento: '2750',
+  valorUnitario: '0',
+  permiteRotacao: true,
 });
 
 function numero(texto: string): number {
-  const n = Number(String(texto).trim().replace(',', '.'));
+  const limpo = String(texto)
+    .trim()
+    .replace(/R\$\s?/gi, '')
+    .replace(/\s/g, '');
+  if (!limpo) return Number.NaN;
+  // Aceita 180 | 180,50 | 1.180,50
+  const normalizado = limpo.includes(',')
+    ? limpo.replace(/\./g, '').replace(',', '.')
+    : limpo;
+  const n = Number(normalizado);
   return Number.isFinite(n) ? n : Number.NaN;
 }
 
@@ -104,6 +117,8 @@ export function CadastrosAdmin() {
       espessura: String(produto.espessura).replace('.', ','),
       largura: String(produto.largura),
       comprimento: String(produto.comprimento),
+      valorUnitario: String(produto.valorUnitario).replace('.', ','),
+      permiteRotacao: produto.permiteRotacao !== false,
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -123,7 +138,13 @@ export function CadastrosAdmin() {
       espessura: numero(form.espessura),
       largura: numero(form.largura),
       comprimento: numero(form.comprimento),
+      valorUnitario: numero(form.valorUnitario),
+      permiteRotacao: form.permiteRotacao,
     };
+    if (!Number.isFinite(payload.valorUnitario) || payload.valorUnitario < 0) {
+      setErro('Informe o valor unitário da chapa em reais (0 ou maior).');
+      return;
+    }
     setSalvandoProduto(true);
     try {
       if (editandoId) {
@@ -136,7 +157,12 @@ export function CadastrosAdmin() {
       limparFormulario();
       await recarregarProdutos();
     } catch (falha) {
-      setErro(falha instanceof ErroApi ? falha.message : 'Não foi possível salvar o produto');
+      if (falha instanceof ErroApi) {
+        const detalhe = falha.detalhes?.map((d) => d.mensagem).join(' ');
+        setErro(detalhe ? `${falha.message}: ${detalhe}` : falha.message);
+      } else {
+        setErro('Não foi possível salvar o produto');
+      }
     } finally {
       setSalvandoProduto(false);
     }
@@ -215,7 +241,8 @@ export function CadastrosAdmin() {
           {editandoId ? 'Editar produto MDF' : 'Cadastrar produto MDF'}
         </h2>
         <p className="mt-1 mb-4 text-sm text-stone-500">
-          Nome, cor, espessura e dimensões da chapa. O cliente escolhe estes produtos ao montar o plano.
+          Nome, cor, espessura, dimensões e valor unitário da chapa. O cliente vê estes dados no
+          orçamento estimado (produtos + cortes).
         </p>
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           <Campo
@@ -248,7 +275,14 @@ export function CadastrosAdmin() {
             inputMode="decimal"
             value={form.largura}
             onChange={(e) => setForm((a) => ({ ...a, largura: e.target.value }))}
-            ajuda="Lado menor da chapa. Padrão de mercado: 1840 mm."
+            ajuda="Lado menor da chapa. Padrão de mercado: 1850 mm."
+          />
+          <Campo
+            rotulo="Valor unitário (R$) *"
+            inputMode="decimal"
+            value={form.valorUnitario}
+            onChange={(e) => setForm((a) => ({ ...a, valorUnitario: e.target.value }))}
+            ajuda="Preço de uma chapa. Entra no orçamento: chapas estimadas × este valor."
           />
           <Campo
             rotulo="Código (Corte MadePinus)"
@@ -257,6 +291,25 @@ export function CadastrosAdmin() {
             onChange={(e) => setForm((a) => ({ ...a, codigo: e.target.value }))}
             ajuda="Opcional. Se vazio, a central gera a partir de 99000."
           />
+          <label className="flex flex-col gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-3 md:col-span-2 lg:col-span-3">
+            <span className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                className="mt-1 size-4 rounded border-stone-300 text-madeira-700 focus:ring-madeira-600"
+                checked={form.permiteRotacao}
+                onChange={(e) => setForm((a) => ({ ...a, permiteRotacao: e.target.checked }))}
+              />
+              <span>
+                <span className="block text-sm font-semibold text-stone-800">
+                  Chapa permite rotação de peças
+                </span>
+                <span className="mt-1 block text-xs text-stone-500">
+                  Marque em padrões lisos (cores sólidas). Desmarque em padrões amadeirados com veio —
+                  nesses casos as peças não giram no plano de corte.
+                </span>
+              </span>
+            </span>
+          </label>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           <Botao type="button" onClick={() => void salvarProduto()} carregando={salvandoProduto}>
@@ -290,7 +343,7 @@ export function CadastrosAdmin() {
           />
         ) : (
           <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
-            <table className="w-full min-w-[860px] text-sm">
+            <table className="w-full min-w-[960px] text-sm">
               <thead className="bg-stone-100 text-xs uppercase text-stone-500">
                 <tr>
                   <th className="px-3 py-2 text-left font-semibold">Cód.</th>
@@ -298,6 +351,8 @@ export function CadastrosAdmin() {
                   <th className="px-3 py-2 text-left font-semibold">Cor</th>
                   <th className="px-3 py-2 text-right font-semibold">Espessura</th>
                   <th className="px-3 py-2 text-right font-semibold">Chapa</th>
+                  <th className="px-3 py-2 text-right font-semibold">Valor unit.</th>
+                  <th className="px-3 py-2 text-center font-semibold">Rotação</th>
                   <th className="px-3 py-2 text-right font-semibold">Situação</th>
                   <th className="px-3 py-2 text-right font-semibold">Ações</th>
                 </tr>
@@ -311,6 +366,12 @@ export function CadastrosAdmin() {
                     <td className="px-3 py-2 text-right tabular-nums">{produto.espessura} mm</td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {produto.comprimento} × {produto.largura} mm
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium text-stone-800">
+                      {formatarMoeda(produto.valorUnitario)}
+                    </td>
+                    <td className="px-3 py-2 text-center text-xs font-medium text-stone-600">
+                      {produto.permiteRotacao !== false ? 'Permite' : 'Sem rotação'}
                     </td>
                     <td className="px-3 py-2 text-right">
                       <button

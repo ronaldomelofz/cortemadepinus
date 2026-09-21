@@ -140,10 +140,10 @@ export function Metrica({
   detalhe?: string;
 }) {
   return (
-    <div className="cartao px-4 py-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">{rotulo}</p>
-      <p className="mt-1 text-2xl font-bold tabular-nums text-stone-900">{valor}</p>
-      {detalhe && <p className="text-xs text-stone-500">{detalhe}</p>}
+    <div className="rounded-2xl border border-madeira-100 bg-gradient-to-br from-white to-madeira-50/60 px-4 py-3.5 shadow-sm">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-500">{rotulo}</p>
+      <p className="mt-1 text-2xl font-extrabold tabular-nums tracking-tight text-madeira-900">{valor}</p>
+      {detalhe && <p className="mt-0.5 text-xs text-stone-500">{detalhe}</p>}
     </div>
   );
 }

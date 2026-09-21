@@ -6,6 +6,7 @@ import {
   formatarM2,
   formatarMoeda,
   pedidoEditavelPeloCliente,
+  pedidoProntoParaEnvio,
   pedidoReabivelPeloCliente,
   SERRA_PADRAO_MM,
   VALOR_CORTE_PADRAO,
@@ -13,13 +14,19 @@ import {
   VEIO_LABEL,
   type ConfiguracaoCorte,
   type Pedido,
+  type ProdutoMdf,
   type ResumoPedido,
   type StatusPedido,
 } from '@cortemadepinus/shared';
 import { Aviso, Botao, Carregando, EtiquetaStatus, Metrica } from '../componentes/ui';
+import { PainelOperador } from '../componentes/PainelOperador';
+import { PainelPagamentoAdmin } from '../componentes/PainelPagamentoAdmin';
 import { VisualizacaoPlano } from '../componentes/VisualizacaoPlano';
 import { api, ErroApi } from '../lib/api';
+import { basePedidosPorPapel } from '../lib/destino';
 import { pedidoParaFormulario, resumirCortes } from '../lib/formularioPedido';
+import { abrirPaginaImpressao } from '../lib/impressao';
+import { confirmarEnvioParaCentral } from '../lib/pedidoCliente';
 import { useSessao } from '../lib/sessao';
 
 const TRANSICOES: Record<StatusPedido, StatusPedido[]> = {
@@ -28,7 +35,8 @@ const TRANSICOES: Record<StatusPedido, StatusPedido[]> = {
   EM_ANALISE: ['ORCAMENTO_ENVIADO', 'APROVADO', 'CANCELADO'],
   ORCAMENTO_ENVIADO: ['APROVADO', 'EM_ANALISE', 'CANCELADO'],
   APROVADO: ['EM_PRODUCAO', 'CANCELADO'],
-  EM_PRODUCAO: ['PRONTO', 'CANCELADO'],
+  EM_PRODUCAO: ['PAUSADO', 'PRONTO', 'CANCELADO'],
+  PAUSADO: ['EM_PRODUCAO', 'PRONTO', 'CANCELADO'],
   PRONTO: ['ENTREGUE'],
   ENTREGUE: [],
   CANCELADO: [],
@@ -39,6 +47,9 @@ export function DetalhePedido() {
   const navegar = useNavigate();
   const { usuario } = useSessao();
   const ehAdmin = usuario?.role === 'ADMIN';
+  const ehOperador = usuario?.role === 'OPERADOR';
+  const ehCentral = ehAdmin || ehOperador;
+  const basePedidos = basePedidosPorPapel(usuario?.role);
 
   const [pedido, setPedido] = useState<Pedido | null>(null);
   const [resumo, setResumo] = useState<ResumoPedido | null>(null);
@@ -50,6 +61,7 @@ export function DetalhePedido() {
     serraMm: SERRA_PADRAO_MM,
     valorCorte: VALOR_CORTE_PADRAO,
   });
+  const [produtos, setProdutos] = useState<ProdutoMdf[]>([]);
 
   async function recarregar() {
     if (!id) return;
@@ -59,10 +71,15 @@ export function DetalhePedido() {
   }
 
   useEffect(() => {
-    api
-      .catalogoConfiguracao()
-      .then((resposta) => setConfigCorte(resposta.configuracao))
-      .catch(() => setConfigCorte({ serraMm: SERRA_PADRAO_MM, valorCorte: VALOR_CORTE_PADRAO }));
+    Promise.all([
+      api.catalogoConfiguracao().catch(() => ({
+        configuracao: { serraMm: SERRA_PADRAO_MM, valorCorte: VALOR_CORTE_PADRAO },
+      })),
+      api.catalogoProdutos().catch(() => ({ itens: [] as ProdutoMdf[] })),
+    ]).then(([conf, catalogo]) => {
+      setConfigCorte(conf.configuracao);
+      setProdutos(catalogo.itens);
+    });
   }, []);
 
   useEffect(() => {
@@ -74,9 +91,20 @@ export function DetalhePedido() {
   }, [id]);
 
   const cortes = useMemo(() => {
-    if (!pedido) return { totalCortes: 0, valorEstimado: 0, valorUnitario: configCorte.valorCorte };
-    return resumirCortes(pedidoParaFormulario(pedido), configCorte);
-  }, [pedido, configCorte]);
+    const precosPorCodigo = new Map(produtos.map((p) => [p.codigo, p.valorUnitario]));
+    const vazio = {
+      totalCortes: 0,
+      valorEstimado: 0,
+      valorUnitario: configCorte.valorCorte,
+      valorCortes: 0,
+      valorPorCorte: configCorte.valorCorte,
+      valorProdutos: 0,
+      valorTotal: 0,
+      chapasEstimadas: 0,
+    };
+    if (!pedido) return vazio;
+    return resumirCortes(pedidoParaFormulario(pedido), { ...configCorte, precosPorCodigo });
+  }, [pedido, configCorte, produtos]);
 
   async function executar(acao: () => Promise<unknown>) {
     setErro(null);
@@ -96,9 +124,11 @@ export function DetalhePedido() {
 
   const materiaisPorId = new Map(pedido.materiais.map((m) => [m.id, m]));
   const podeEditar = pedidoEditavelPeloCliente(pedido.status);
-  const podeReabrir = !ehAdmin && pedidoReabivelPeloCliente(pedido.status);
-  const destinoEdicao = `/app/pedidos/${pedido.id}/editar`;
+  const podeReabrir = !ehCentral && pedidoReabivelPeloCliente(pedido.status);
+  const destinoEdicao = `${basePedidos}/pedidos/${pedido.id}/editar`;
   const pedidoId = pedido.id;
+  const podeEnviar =
+    podeEditar && pedidoProntoParaEnvio(pedido.status, resumo.totalPecas, pedido.titulo);
 
   async function irParaEdicao() {
     if (podeEditar) {
@@ -143,7 +173,7 @@ export function DetalhePedido() {
             Criado em {formatarData(pedido.criadoEm)}
             {pedido.enviadoEm ? ` · Enviado em ${formatarData(pedido.enviadoEm)}` : ''}
           </p>
-          {ehAdmin && pedido.cliente && (
+          {ehCentral && pedido.cliente && (
             <p className="mt-1 text-sm text-stone-600">
               Cliente: <strong>{pedido.cliente.nome}</strong>
               {pedido.cliente.empresa ? ` · ${pedido.cliente.empresa}` : ''} · {pedido.cliente.email}
@@ -153,18 +183,20 @@ export function DetalhePedido() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {(podeEditar || podeReabrir) && (
-            <Botao variante={podeEditar ? 'primario' : 'secundario'} carregando={ocupado} onClick={() => void irParaEdicao()}>
-              Editar plano de corte
-            </Botao>
-          )}
-          {podeEditar && !ehAdmin && (
+          {podeEnviar && (!ehCentral || ehAdmin) && (
             <Botao
-              variante="secundario"
               carregando={ocupado}
-              onClick={() => void executar(() => api.enviarPedido(pedido.id))}
+              onClick={() => {
+                if (!confirmarEnvioParaCentral(resumo.totalPecas)) return;
+                void executar(() => api.enviarPedido(pedido.id));
+              }}
             >
               Enviar para a central
+            </Botao>
+          )}
+          {(podeEditar || podeReabrir) && !ehOperador && (
+            <Botao variante={podeEditar ? 'secundario' : 'secundario'} carregando={ocupado} onClick={() => void irParaEdicao()}>
+              Editar plano de corte
             </Botao>
           )}
           {podeEditar && (
@@ -175,7 +207,7 @@ export function DetalhePedido() {
                 if (!confirm('Excluir este rascunho? A ação não pode ser desfeita.')) return;
                 void executar(async () => {
                   await api.excluirPedido(pedido.id);
-                  navegar(ehAdmin ? '/admin/pedidos' : '/app');
+                  navegar(basePedidos);
                 });
               }}
             >
@@ -187,7 +219,27 @@ export function DetalhePedido() {
 
       {erro && <Aviso tipo="erro">{erro}</Aviso>}
 
-      {podeEditar && (
+      {podeEditar && !ehCentral && (
+        <Aviso tipo="atencao" titulo="Plano em rascunho">
+          {podeEnviar ? (
+            <>
+              Revise peças e materiais. Quando estiver tudo certo, clique em{' '}
+              <strong>Enviar para a central</strong> para a MadePinus analisar o pedido.
+            </>
+          ) : (
+            <>
+              Complete o nome do projeto e adicione ao menos uma peça antes de enviar para a central.
+            </>
+          )}
+        </Aviso>
+      )}
+      {podeEditar && ehAdmin && (
+        <Aviso tipo="atencao">
+          Rascunho da central. Edite o plano e use <strong>Enviar para a central</strong> para seguir o
+          fluxo de pagamento e produção.
+        </Aviso>
+      )}
+      {podeEditar && ehCentral && !ehAdmin && (
         <Aviso tipo="atencao">
           Este plano ainda é rascunho. Você pode editar peças e materiais até enviar o serviço para a
           central.
@@ -201,20 +253,43 @@ export function DetalhePedido() {
         </Aviso>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Metrica rotulo="Itens" valor={resumo.totalItens} />
         <Metrica rotulo="Peças" valor={resumo.totalPecas} />
         <Metrica rotulo="Área total" valor={formatarM2(resumo.areaTotalM2)} />
-        <Metrica
-          rotulo="Valor estimado dos cortes"
-          valor={formatarMoeda(cortes.valorEstimado)}
-          detalhe={`${cortes.totalCortes} corte(s) × ${formatarMoeda(cortes.valorUnitario)}`}
-        />
-        <Metrica
-          rotulo="Orçamento"
-          valor={pedido.valorOrcamento != null ? formatarMoeda(pedido.valorOrcamento) : '—'}
-        />
+        {!ehOperador && (
+          <Metrica
+            rotulo="Orçamento oficial"
+            valor={pedido.valorOrcamento != null ? formatarMoeda(pedido.valorOrcamento) : '—'}
+            detalhe="definido pela central"
+          />
+        )}
       </div>
+
+      {!ehOperador && (
+      <div className="rounded-2xl border border-madeira-200 bg-madeira-50/60 p-4">
+        <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-madeira-900">
+          Orçamento estimado
+        </h3>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Metrica
+            rotulo="Valor dos cortes"
+            valor={formatarMoeda(cortes.valorCortes)}
+            detalhe={`${cortes.totalCortes} corte(s) × ${formatarMoeda(cortes.valorPorCorte)}`}
+          />
+          <Metrica
+            rotulo="Valor dos produtos"
+            valor={formatarMoeda(cortes.valorProdutos)}
+            detalhe={`${cortes.chapasEstimadas} chapa(s) estimadas`}
+          />
+          <Metrica
+            rotulo="Valor total"
+            valor={formatarMoeda(cortes.valorTotal)}
+            detalhe="cortes + produtos"
+          />
+        </div>
+      </div>
+      )}
 
       <section className="cartao p-5">
         <h2 className="mb-3 text-base font-bold text-stone-900">Arquivos para a produção</h2>
@@ -229,7 +304,9 @@ export function DetalhePedido() {
         </div>
       </section>
 
+      {ehAdmin && <PainelPagamentoAdmin pedido={pedido} ocupado={ocupado} executar={executar} />}
       {ehAdmin && <PainelStatus pedido={pedido} ocupado={ocupado} executar={executar} />}
+      {ehOperador && <PainelOperador pedido={pedido} ocupado={ocupado} executar={executar} />}
 
       <section className="cartao p-5">
         <h2 className="mb-3 text-base font-bold text-stone-900">Materiais</h2>
@@ -317,12 +394,6 @@ export function DetalhePedido() {
             </tbody>
           </table>
         </div>
-        {pedido.observacoes && (
-          <div className="mt-4">
-            <p className="rotulo">Observações do cliente</p>
-            <p className="whitespace-pre-line text-sm text-stone-700">{pedido.observacoes}</p>
-          </div>
-        )}
       </section>
 
       <section className="cartao p-5">
@@ -335,12 +406,12 @@ export function DetalhePedido() {
           serraMm={configCorte.serraMm}
           valorCorte={configCorte.valorCorte}
           acoes={
-            ehAdmin ? (
+            ehCentral ? (
               <>
                 <Botao
                   type="button"
                   onClick={() =>
-                    window.open(`/admin/pedidos/${pedido.id}/imprimir/planos`, '_blank', 'noopener')
+                    abrirPaginaImpressao(`${basePedidos}/pedidos/${pedido.id}/imprimir/planos`)
                   }
                 >
                   Imprimir planos de corte
@@ -349,7 +420,7 @@ export function DetalhePedido() {
                   type="button"
                   variante="secundario"
                   onClick={() =>
-                    window.open(`/admin/pedidos/${pedido.id}/imprimir/etiquetas`, '_blank', 'noopener')
+                    abrirPaginaImpressao(`${basePedidos}/pedidos/${pedido.id}/imprimir/etiquetas`)
                   }
                 >
                   Imprimir etiquetas
@@ -360,8 +431,14 @@ export function DetalhePedido() {
         />
       </section>
 
-      <Anexos pedido={pedido} podeEditar={podeEditar || ehAdmin} executar={executar} ocupado={ocupado} />
+      <Anexos
+        pedido={pedido}
+        podeEditar={(podeEditar || ehAdmin) && !ehOperador}
+        executar={executar}
+        ocupado={ocupado}
+      />
 
+      {!ehOperador && (
       <section className="cartao p-5">
         <h2 className="mb-3 text-base font-bold text-stone-900">Conversa sobre o pedido</h2>
         <div className="space-y-3">
@@ -409,6 +486,7 @@ export function DetalhePedido() {
           </Botao>
         </form>
       </section>
+      )}
 
       <section className="cartao p-5">
         <h2 className="mb-3 text-base font-bold text-stone-900">Histórico</h2>

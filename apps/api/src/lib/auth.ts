@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import type { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import type { Role } from '@cortemadepinus/shared';
+import { ehCentral } from '@cortemadepinus/shared';
 import { env } from '../env';
 import { naoAutorizado, proibido } from './erros';
 
@@ -62,5 +63,17 @@ export function exigirAutenticacao(req: Request, _res: Response, next: NextFunct
 export function exigirAdmin(req: Request, _res: Response, next: NextFunction): void {
   if (!req.usuario) return next(naoAutorizado());
   if (req.usuario.role !== 'ADMIN') return next(proibido('Área restrita à central de serviços'));
+  next();
+}
+
+export function exigirOperador(req: Request, _res: Response, next: NextFunction): void {
+  if (!req.usuario) return next(naoAutorizado());
+  if (req.usuario.role !== 'OPERADOR') return next(proibido('Área restrita ao operador de produção'));
+  next();
+}
+
+export function exigirCentral(req: Request, _res: Response, next: NextFunction): void {
+  if (!req.usuario) return next(naoAutorizado());
+  if (!ehCentral(req.usuario.role)) return next(proibido('Área restrita à central de serviços'));
   next();
 }

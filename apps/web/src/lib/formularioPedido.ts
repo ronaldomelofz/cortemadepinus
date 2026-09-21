@@ -18,6 +18,7 @@ export interface MaterialForm {
   chapaAltura: string;
   fornecidoPeloCliente: boolean;
   quantidadeChapas: string;
+  permiteRotacao: boolean;
 }
 
 export interface PecaForm {
@@ -47,7 +48,7 @@ export interface PedidoForm {
 
 /** Chapas mais usadas no mercado brasileiro (largura x altura em mm). */
 export const CHAPAS_PADRAO = [
-  { rotulo: 'MDF 2750 × 1840', largura: 2750, altura: 1840 },
+  { rotulo: 'MDF 2750 × 1850', largura: 2750, altura: 1850 },
   { rotulo: 'MDF 2750 × 1850', largura: 2750, altura: 1850 },
   { rotulo: 'MDP 2750 × 1850', largura: 2750, altura: 1850 },
   { rotulo: 'Compensado 2440 × 1220', largura: 2440, altura: 1220 },
@@ -68,14 +69,23 @@ export function materialVazio(codigo: number): MaterialForm {
     espessura: '15',
     cor: '',
     chapaLargura: '2750',
-    chapaAltura: '1840',
+    chapaAltura: '1850',
     fornecidoPeloCliente: false,
     quantidadeChapas: '',
+    permiteRotacao: true,
   };
 }
 
 export function materialDeProduto(
-  produto: { codigo: number; nome: string; cor: string; espessura: number; largura: number; comprimento: number },
+  produto: {
+    codigo: number;
+    nome: string;
+    cor: string;
+    espessura: number;
+    largura: number;
+    comprimento: number;
+    permiteRotacao?: boolean;
+  },
   chave?: string,
 ): MaterialForm {
   return {
@@ -88,6 +98,7 @@ export function materialDeProduto(
     chapaAltura: String(produto.largura),
     fornecidoPeloCliente: false,
     quantidadeChapas: '',
+    permiteRotacao: produto.permiteRotacao !== false,
   };
 }
 
@@ -129,34 +140,48 @@ export function aplicarCatalogo(
     espessura: number;
     largura: number;
     comprimento: number;
+    permiteRotacao?: boolean;
   }>,
 ): PedidoForm {
   if (produtos.length === 0) return formulario;
   const catalogo = produtos.map((produto) => materialDeProduto(produto));
   const porCodigo = new Map(catalogo.map((material) => [material.codigo, material]));
+  const padrao = catalogo[0]?.codigo ?? '';
+
+  // Primeiro realinha as peças ao catálogo; depois descarta placeholders (ex.: cód. 99000).
+  const pecasAlinhadas = formulario.pecas.map((peca) =>
+    porCodigo.has(peca.materialCodigo) ? peca : { ...peca, materialCodigo: padrao },
+  );
+
   formulario.materiais.forEach((material) => {
-    if (!porCodigo.has(material.codigo)) porCodigo.set(material.codigo, material);
+    if (porCodigo.has(material.codigo)) return;
+    const usadoNasPecas = pecasAlinhadas.some((peca) => peca.materialCodigo === material.codigo);
+    // Só descrição/cor contam como material “de verdade”; medidas padrão do placeholder não.
+    const preenchido = material.descricao.trim() !== '' || material.cor.trim() !== '';
+    if (usadoNasPecas || preenchido) porCodigo.set(material.codigo, material);
   });
-  const materiais = [...porCodigo.values()];
-  const padrao = materiais[0]?.codigo ?? '';
+
+  const pecas = pecasAlinhadas.map((peca) => {
+    const material = porCodigo.get(peca.materialCodigo);
+    const veio = material?.permiteRotacao === false ? ('COMPRIMENTO' as const) : ('INDIFERENTE' as const);
+    return { ...peca, veio };
+  });
+
   return {
     ...formulario,
-    materiais,
-    pecas: formulario.pecas.map((peca) =>
-      porCodigo.has(peca.materialCodigo) ? peca : { ...peca, materialCodigo: padrao },
-    ),
+    materiais: [...porCodigo.values()],
+    pecas,
   };
 }
 
 export function formularioInicial(): PedidoForm {
-  const material = materialVazio(99000);
   return {
     titulo: '',
     ambiente: '',
     observacoes: '',
     prazoDesejado: '',
-    materiais: [material],
-    pecas: [pecaVazia(1, material.codigo)],
+    materiais: [],
+    pecas: [pecaVazia(1, '')],
   };
 }
 
@@ -178,6 +203,7 @@ export function pedidoParaFormulario(pedido: Pedido): PedidoForm {
       chapaAltura: String(material.chapaAltura),
       fornecidoPeloCliente: material.fornecidoPeloCliente,
       quantidadeChapas: material.quantidadeChapas ? String(material.quantidadeChapas) : '',
+      permiteRotacao: material.permiteRotacao !== false,
     })),
     pecas: pedido.pecas.map((peca) => ({
       chave: peca.id,
@@ -224,21 +250,26 @@ export function formularioParaPayload(formulario: PedidoForm) {
       chapaAltura: numero(material.chapaAltura),
       fornecidoPeloCliente: material.fornecidoPeloCliente,
       quantidadeChapas: material.quantidadeChapas ? numero(material.quantidadeChapas) : null,
+      permiteRotacao: material.permiteRotacao !== false,
     })),
-    pecas: formulario.pecas.map((peca) => ({
-      codigo: numero(peca.codigo),
-      materialCodigo: numero(peca.materialCodigo),
-      quantidade: numero(peca.quantidade),
-      largura: numero(peca.largura),
-      altura: numero(peca.altura),
+    pecas: formulario.pecas.map((peca) => {
+      const material = materiais.find((m) => m.codigo === peca.materialCodigo);
+      const veio = material?.permiteRotacao === false ? 'COMPRIMENTO' : 'INDIFERENTE';
+      return {
+      codigo: Math.round(numero(peca.codigo)),
+      materialCodigo: Math.round(numero(peca.materialCodigo)),
+      quantidade: Math.round(numero(peca.quantidade)),
+      largura: Math.round(numero(peca.largura)),
+      altura: Math.round(numero(peca.altura)),
       descricao: peca.descricao.trim(),
-      veio: peca.veio,
+      veio,
       fitaC1: false,
       fitaC2: false,
       fitaL1: false,
       fitaL2: false,
       observacao: peca.observacao.trim(),
-    })),
+    };
+    }),
   };
 }
 
@@ -306,11 +337,27 @@ export function resumirFormulario(formulario: PedidoForm): ResumoForm {
   };
 }
 
-/** Contagem de cortes do plano e valor estimado com o preço definido na central. */
+/** Contagem de cortes + valor estimado (cortes + chapas) para o orçamento ao cliente. */
 export function resumirCortes(
   formulario: PedidoForm,
-  opcoes: { serraMm: number; valorCorte: number },
-): { totalCortes: number; valorEstimado: number; valorUnitario: number } {
+  opcoes: {
+    serraMm: number;
+    valorCorte: number;
+    /** Preço unitário da chapa por código do material (catálogo). */
+    precosPorCodigo?: Map<number, number> | Record<number, number>;
+  },
+): {
+  totalCortes: number;
+  /** @deprecated use valorCortes */
+  valorEstimado: number;
+  /** @deprecated use valorPorCorte */
+  valorUnitario: number;
+  valorCortes: number;
+  valorPorCorte: number;
+  valorProdutos: number;
+  valorTotal: number;
+  chapasEstimadas: number;
+} {
   const chapas = formulario.materiais
     .map((m) => ({
       codigo: numero(m.codigo),
@@ -352,9 +399,31 @@ export function resumirCortes(
     apararBordas: true,
   });
 
+  const valorCortes = arredondar(resultado.totalCortes * opcoes.valorCorte, 2);
+  const resumo = resumirFormulario(formulario);
+  const precos = opcoes.precosPorCodigo;
+  const precoDe = (codigo: number): number => {
+    if (!precos) return 0;
+    if (precos instanceof Map) return precos.get(codigo) ?? 0;
+    return precos[codigo] ?? 0;
+  };
+
+  const valorProdutos = arredondar(
+    resumo.porMaterial.reduce((total, linha) => {
+      const codigo = numero(linha.codigo);
+      return total + linha.chapasEstimadas * precoDe(codigo);
+    }, 0),
+    2,
+  );
+
   return {
     totalCortes: resultado.totalCortes,
-    valorEstimado: arredondar(resultado.totalCortes * opcoes.valorCorte, 2),
+    valorEstimado: valorCortes,
     valorUnitario: opcoes.valorCorte,
+    valorCortes,
+    valorPorCorte: opcoes.valorCorte,
+    valorProdutos,
+    valorTotal: arredondar(valorCortes + valorProdutos, 2),
+    chapasEstimadas: resumo.chapasEstimadas,
   };
 }

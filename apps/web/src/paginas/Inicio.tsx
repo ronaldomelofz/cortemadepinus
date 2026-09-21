@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { AvisoConfiguracao, Marca } from '../componentes/Layout';
+import { destinoPorPapel } from '../lib/destino';
 import { useSessao } from '../lib/sessao';
 
 const PASSOS = [
@@ -9,7 +10,7 @@ const PASSOS = [
   },
   {
     titulo: 'Lance as medidas',
-    texto: 'Digite peça por peça, cole direto do Excel ou importe o arquivo CSV/TXT do Corte MadePinus.',
+    texto: 'Digite peça por peça, cole direto do Excel ou importe CSV, TXT ou Excel (.xlsx) no padrão Corte MadePinus.',
   },
   {
     titulo: 'Envie para a central',
@@ -46,7 +47,7 @@ const RECURSOS = [
 
 export function Inicio() {
   const { usuario } = useSessao();
-  const destino = usuario ? (usuario.role === 'ADMIN' ? '/admin' : '/app') : '/entrar';
+  const destino = usuario ? destinoPorPapel(usuario.role) : '/entrar';
 
   return (
     <div className="min-h-screen bg-stone-50">
@@ -54,12 +55,36 @@ export function Inicio() {
       <header className="border-b border-stone-200 bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
           <Marca />
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <Link
               to="/entrar"
               className="rounded-lg px-3 py-2 text-sm font-semibold text-stone-600 hover:bg-stone-100"
             >
               Entrar
+            </Link>
+            <Link
+              to="/entrar?perfil=cliente"
+              className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800"
+            >
+              Acesso cliente
+            </Link>
+            <Link
+              to="/entrar?perfil=central"
+              className="rounded-lg px-3 py-2 text-sm font-semibold text-madeira-800 ring-1 ring-inset ring-madeira-300 hover:bg-madeira-50"
+            >
+              Acesso administrador
+            </Link>
+            <Link
+              to="/entrar?perfil=vendedor"
+              className="rounded-lg px-3 py-2 text-sm font-semibold text-madeira-800 ring-1 ring-inset ring-madeira-300 hover:bg-madeira-50"
+            >
+              Acesso vendedor
+            </Link>
+            <Link
+              to="/entrar?perfil=operador"
+              className="rounded-lg px-3 py-2 text-sm font-semibold text-madeira-800 ring-1 ring-inset ring-madeira-300 hover:bg-madeira-50"
+            >
+              Acesso operador
             </Link>
             <Link
               to="/cadastrar"

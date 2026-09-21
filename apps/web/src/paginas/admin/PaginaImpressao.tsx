@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, Navigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useLocation, useParams } from 'react-router-dom';
 import {
   SERRA_PADRAO_MM,
   VALOR_CORTE_PADRAO,
@@ -9,12 +9,15 @@ import {
 import { DesenhoChapa, montarResultado } from '../../componentes/VisualizacaoPlano';
 import { Botao, Carregando } from '../../componentes/ui';
 import { api, ErroApi } from '../../lib/api';
+import { agendarDialogoImpressao } from '../../lib/impressao';
 
 const TIPOS = ['planos', 'etiquetas'] as const;
 type TipoImpressao = (typeof TIPOS)[number];
 
 export function PaginaImpressao() {
   const { id, tipo } = useParams<{ id: string; tipo: string }>();
+  const local = useLocation();
+  const basePedidos = local.pathname.startsWith('/operador') ? '/operador' : '/admin';
   const [pedido, setPedido] = useState<Pedido | null>(null);
   const [config, setConfig] = useState<ConfiguracaoCorte>({
     serraMm: SERRA_PADRAO_MM,
@@ -37,14 +40,14 @@ export function PaginaImpressao() {
       .finally(() => setCarregando(false));
   }, [id, tipoValido]);
 
-  if (!tipoValido) return <Navigate to="/admin/pedidos" replace />;
+  if (!tipoValido) return <Navigate to={`${basePedidos}`} replace />;
 
   if (carregando) return <Carregando texto="Preparando impressão..." />;
   if (erro || !pedido) {
     return (
       <div className="p-8 text-center">
         <p className="text-rose-700">{erro ?? 'Pedido não encontrado'}</p>
-        <Link to="/admin/pedidos" className="mt-4 inline-block font-semibold text-madeira-700">
+        <Link to={basePedidos} className="mt-4 inline-block font-semibold text-madeira-700">
           Voltar aos pedidos
         </Link>
       </div>
@@ -105,10 +108,7 @@ function ImpressaoPlanos({ pedido, config }: { pedido: Pedido; config: Configura
     return montarResultado(pedido.materiais, pecas, config.serraMm);
   }, [pedido, config.serraMm]);
 
-  useEffect(() => {
-    const t = window.setTimeout(() => window.print(), 400);
-    return () => window.clearTimeout(t);
-  }, []);
+  useEffect(() => agendarDialogoImpressao(), []);
 
   return (
     <div className="bg-white text-stone-900">
@@ -180,10 +180,7 @@ function ImpressaoEtiquetas({ pedido }: { pedido: Pedido }) {
     return lista;
   }, [pedido, materiaisPorId]);
 
-  useEffect(() => {
-    const t = window.setTimeout(() => window.print(), 400);
-    return () => window.clearTimeout(t);
-  }, []);
+  useEffect(() => agendarDialogoImpressao(), []);
 
   return (
     <div className="bg-white text-stone-900">

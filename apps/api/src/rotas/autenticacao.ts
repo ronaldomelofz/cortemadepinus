@@ -33,11 +33,18 @@ rotasAutenticacao.post(
         telefone: dados.telefone || null,
         empresa: dados.empresa || null,
         documento: dados.documento || null,
+        role: 'CLIENTE',
+        /** Novos cadastros públicos aguardam liberação do administrador. */
+        ativo: false,
       },
     });
 
-    const perfil = mapearUsuario(usuario);
-    res.status(201).json({ token: gerarToken(perfil), usuario: perfil });
+    res.status(201).json({
+      usuario: mapearUsuario(usuario),
+      aguardandoLiberacao: true,
+      mensagem:
+        'Conta criada. Aguarde a liberação da central MadePinus para entrar no sistema.',
+    });
   }),
 );
 
@@ -46,11 +53,22 @@ rotasAutenticacao.post(
   limitadorLogin,
   assincrono(async (req, res) => {
     const dados = loginSchema.parse(req.body);
-    const usuario = await prisma.usuario.findUnique({ where: { email: dados.email } });
+    const identificador = dados.email;
+    const usuario = identificador.includes('@')
+      ? await prisma.usuario.findUnique({ where: { email: identificador } })
+      : await prisma.usuario.findFirst({
+          where: {
+            OR: [{ email: identificador }, { email: { startsWith: `${identificador}@` } }],
+          },
+        });
     if (!usuario || !(await conferirSenha(dados.senha, usuario.senhaHash))) {
-      throw naoAutorizado('E-mail ou senha incorretos');
+      throw naoAutorizado('Usuário ou senha incorretos');
     }
-    if (!usuario.ativo) throw naoAutorizado('Conta desativada. Fale com a central de serviços.');
+    if (!usuario.ativo) {
+      throw naoAutorizado(
+        'Sua conta ainda aguarda liberação da central MadePinus. Você será avisado quando puder entrar.',
+      );
+    }
 
     const perfil = mapearUsuario(usuario);
     res.json({ token: gerarToken(perfil), usuario: perfil });
@@ -79,6 +97,12 @@ rotasAutenticacao.put(
         telefone: dados.telefone || null,
         empresa: dados.empresa || null,
         documento: dados.documento || null,
+        rua: dados.rua || null,
+        numero: dados.numero || null,
+        bairro: dados.bairro || null,
+        cidade: dados.cidade || null,
+        estado: dados.estado ? dados.estado.toUpperCase() : null,
+        cep: dados.cep || null,
       },
     });
     res.json({ usuario: mapearUsuario(usuario) });

@@ -22,6 +22,8 @@ export interface ItemParaOtimizar {
   altura: number;
   quantidade: number;
   veio?: Veio;
+  /** false = material amadeirado — não gira mesmo com veio INDIFERENTE. */
+  permiteRotacao?: boolean;
 }
 
 export interface ChapaParaOtimizar {
@@ -60,7 +62,7 @@ export interface ChapaDoPlano {
   materialDescricao: string;
   chapaLargura: number;
   chapaAltura: number;
-  /** COMPRIMENTO = entra pelo lado X (ex.: 2750); LARGURA = entra pelo lado Y (ex.: 1840). */
+  /** COMPRIMENTO = entra pelo lado X (ex.: 2750); LARGURA = entra pelo lado Y (ex.: 1850). */
   sentidoEntrada: SentidoEntrada;
   sentidoEntradaMm: number;
   /** Se definido, os cortes usam este sentido em vez da detecção automática. */
@@ -108,6 +110,7 @@ interface Unidade {
   largura: number;
   altura: number;
   veio: Veio;
+  permiteRotacao: boolean;
 }
 
 interface Colocacao {
@@ -115,8 +118,8 @@ interface Colocacao {
   restantes: Unidade[];
 }
 
-function podeGirar(veio: Veio): boolean {
-  return veio === 'INDIFERENTE';
+function podeGirar(veio: Veio, permiteRotacao = true): boolean {
+  return permiteRotacao && veio === 'INDIFERENTE';
 }
 
 function expandir(itens: ItemParaOtimizar[]): Unidade[] {
@@ -130,6 +133,7 @@ function expandir(itens: ItemParaOtimizar[]): Unidade[] {
         largura: item.largura,
         altura: item.altura,
         veio: item.veio ?? 'INDIFERENTE',
+        permiteRotacao: item.permiteRotacao !== false,
       });
     }
   }
@@ -145,7 +149,9 @@ function cabeNaChapa(unidade: Unidade, chapa: ChapaParaOtimizar, serra: number, 
   const util = areaUtilChapa(chapa, serra, apararBordas);
   return (
     (unidade.largura <= util.w && unidade.altura <= util.h) ||
-    (podeGirar(unidade.veio) && unidade.altura <= util.w && unidade.largura <= util.h)
+    (podeGirar(unidade.veio, unidade.permiteRotacao) &&
+      unidade.altura <= util.w &&
+      unidade.largura <= util.h)
   );
 }
 
@@ -154,7 +160,11 @@ function orientacoes(livre: RetanguloLivre, peca: Unidade) {
   if (peca.largura <= livre.w + EPS && peca.altura <= livre.h + EPS) {
     opcoes.push({ w: peca.largura, h: peca.altura, girada: false });
   }
-  if (podeGirar(peca.veio) && peca.altura <= livre.w + EPS && peca.largura <= livre.h + EPS) {
+  if (
+    podeGirar(peca.veio, peca.permiteRotacao) &&
+    peca.altura <= livre.w + EPS &&
+    peca.largura <= livre.h + EPS
+  ) {
     opcoes.push({ w: peca.altura, h: peca.largura, girada: true });
   }
   opcoes.sort((a, b) => {
@@ -535,6 +545,7 @@ export function organizarPecasNaChapa(
     largura: peca.largura,
     altura: peca.altura,
     veio: 'COMPRIMENTO',
+    permiteRotacao: false,
   }));
   const material: ChapaParaOtimizar = {
     codigo: 0,
@@ -663,7 +674,7 @@ function podeRiparVertical(pecas: PecaNoPlano[], chapa: ChapaParaOtimizar): bool
 
 /**
  * Sentido em que a chapa entra na seccionadora, para o operador não girar a placa.
- * COMPRIMENTO = cortes longos no eixo X (ex.: 2750). LARGURA = cortes longos no eixo Y (ex.: 1840).
+ * COMPRIMENTO = cortes longos no eixo X (ex.: 2750). LARGURA = cortes longos no eixo Y (ex.: 1850).
  */
 export function detectarSentidoEntrada(chapa: ChapaParaOtimizar, pecas: PecaNoPlano[]): SentidoEntrada {
   const scoreH = qualidadeFaixas(faixasHorizontais(pecas), pecas.length, 'x');

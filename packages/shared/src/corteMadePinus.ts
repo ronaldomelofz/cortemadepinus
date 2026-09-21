@@ -291,8 +291,8 @@ export function importarPecas(
     pecas.push({
       codigo: Number.isNaN(codigo) || codigo <= 0 ? sequencial : Math.round(codigo),
       quantidade: Math.round(quantidade),
-      largura,
-      altura,
+      largura: Math.round(largura),
+      altura: Math.round(altura),
       materialCodigo: Number.isNaN(material) || material <= 0 ? materialPadrao : Math.round(material),
       descricao: descricao || `Peça ${sequencial}`,
       observacao: campos[6]?.trim() || undefined,

@@ -11,6 +11,7 @@ import { ErroHttp, tratadorDeErros } from './lib/erros';
 import { rotasAdmin } from './rotas/admin';
 import { rotasAutenticacao } from './rotas/autenticacao';
 import { rotasCatalogo } from './rotas/catalogo';
+import { rotasOperador } from './rotas/operador';
 import { rotasPedidos } from './rotas/pedidos';
 import { prisma } from './prisma';
 
@@ -96,6 +97,7 @@ export function criarApp() {
   app.use('/api/pedidos', rotasPedidos);
   app.use('/api/catalogo', rotasCatalogo);
   app.use('/api/admin', rotasAdmin);
+  app.use('/api/operador', rotasOperador);
 
   if (env.PUBLICO_DIR && fs.existsSync(env.PUBLICO_DIR)) {
     app.use(express.static(env.PUBLICO_DIR));

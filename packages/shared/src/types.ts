@@ -2,8 +2,26 @@
  * Tipos de dominio compartilhados entre a API e o front-end.
  */
 
-export const ROLES = ['CLIENTE', 'ADMIN'] as const;
+export const ROLES = ['CLIENTE', 'VENDEDOR', 'ADMIN', 'OPERADOR'] as const;
 export type Role = (typeof ROLES)[number];
+
+export const PAPEIS_CENTRAL = ['ADMIN', 'OPERADOR'] as const;
+
+export const ROLE_LABEL: Record<Role, string> = {
+  CLIENTE: 'Cliente',
+  VENDEDOR: 'Vendedor',
+  ADMIN: 'Administrador',
+  OPERADOR: 'Operador',
+};
+
+export function ehCentral(role: Role | string): boolean {
+  return role === 'ADMIN' || role === 'OPERADOR';
+}
+
+/** Cliente ou vendedor — mesmos fluxos de plano de corte próprio. */
+export function ehPapelCliente(role: Role | string): boolean {
+  return role === 'CLIENTE' || role === 'VENDEDOR';
+}
 
 export const STATUS_PEDIDO = [
   'RASCUNHO',
@@ -12,6 +30,7 @@ export const STATUS_PEDIDO = [
   'ORCAMENTO_ENVIADO',
   'APROVADO',
   'EM_PRODUCAO',
+  'PAUSADO',
   'PRONTO',
   'ENTREGUE',
   'CANCELADO',
@@ -20,11 +39,12 @@ export type StatusPedido = (typeof STATUS_PEDIDO)[number];
 
 export const STATUS_LABEL: Record<StatusPedido, string> = {
   RASCUNHO: 'Rascunho',
-  ENVIADO: 'Enviado',
+  ENVIADO: 'Aguardando confirmação de pagamento',
   EM_ANALISE: 'Em análise',
   ORCAMENTO_ENVIADO: 'Orçamento enviado',
   APROVADO: 'Aprovado',
   EM_PRODUCAO: 'Em produção',
+  PAUSADO: 'Pausado',
   PRONTO: 'Pronto para retirada',
   ENTREGUE: 'Entregue',
   CANCELADO: 'Cancelado',
@@ -38,6 +58,7 @@ export const STATUS_COR: Record<StatusPedido, string> = {
   ORCAMENTO_ENVIADO: 'bg-amber-50 text-amber-800 ring-amber-200',
   APROVADO: 'bg-teal-50 text-teal-700 ring-teal-200',
   EM_PRODUCAO: 'bg-purple-50 text-purple-700 ring-purple-200',
+  PAUSADO: 'bg-orange-50 text-orange-800 ring-orange-200',
   PRONTO: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
   ENTREGUE: 'bg-green-100 text-green-800 ring-green-300',
   CANCELADO: 'bg-rose-50 text-rose-700 ring-rose-200',
@@ -46,6 +67,27 @@ export const STATUS_COR: Record<StatusPedido, string> = {
 /** O cliente ainda pode alterar peças, materiais e anexos. */
 export function pedidoEditavelPeloCliente(status: StatusPedido): boolean {
   return status === 'RASCUNHO';
+}
+
+/** Rascunho com dados mínimos para envio à central. */
+export function pedidoProntoParaEnvio(
+  status: StatusPedido,
+  totalPecas: number,
+  titulo?: string,
+): boolean {
+  return pedidoEditavelPeloCliente(status) && totalPecas > 0 && Boolean(titulo?.trim());
+}
+
+/**
+ * Já foi enviado, mas a central ainda não iniciou a análise.
+ * O cliente pode voltar o pedido a rascunho para corrigir o plano.
+ */
+export function pedidoAguardandoConfirmacaoPagamento(status: StatusPedido): boolean {
+  return status === 'ENVIADO';
+}
+
+export function pedidoTemComprovante(anexos: Pick<Anexo, 'tipo'>[]): boolean {
+  return anexos.some((anexo) => anexo.tipo === 'COMPROVANTE');
 }
 
 /**
@@ -76,6 +118,12 @@ export interface Usuario {
   telefone?: string | null;
   empresa?: string | null;
   documento?: string | null;
+  rua?: string | null;
+  numero?: string | null;
+  bairro?: string | null;
+  cidade?: string | null;
+  estado?: string | null;
+  cep?: string | null;
   role: Role;
   ativo: boolean;
   criadoEm: string;
@@ -92,6 +140,8 @@ export interface Material {
   chapaAltura: number;
   fornecidoPeloCliente: boolean;
   quantidadeChapas?: number | null;
+  /** Se false, peças deste material não giram no plano (padrão amadeirado). */
+  permiteRotacao: boolean;
   ordem: number;
 }
 
@@ -120,8 +170,17 @@ export interface Anexo {
   nomeArmazenado: string;
   mimeType: string;
   tamanho: number;
+  tipo: TipoAnexo;
   criadoEm: string;
 }
+
+export const TIPOS_ANEXO = ['GERAL', 'COMPROVANTE'] as const;
+export type TipoAnexo = (typeof TIPOS_ANEXO)[number];
+
+export const TIPO_ANEXO_LABEL: Record<TipoAnexo, string> = {
+  GERAL: 'Anexo',
+  COMPROVANTE: 'Comprovante de pagamento',
+};
 
 export interface Mensagem {
   id: string;
@@ -156,6 +215,7 @@ export interface Pedido {
   criadoEm: string;
   atualizadoEm: string;
   enviadoEm?: string | null;
+  pagamentoConfirmadoEm?: string | null;
   materiais: Material[];
   pecas: Peca[];
   anexos: Anexo[];
@@ -188,10 +248,17 @@ export interface ProdutoMdf {
   nome: string;
   cor: string;
   espessura: number;
-  /** Lado menor da chapa, em mm (ex.: 1840). Vira a altura no plano de corte. */
+  /** Lado menor da chapa, em mm (ex.: 1850). Vira a altura no plano de corte. */
   largura: number;
   /** Lado maior da chapa, em mm (ex.: 2750). Vira a largura no plano de corte. */
   comprimento: number;
+  /** Preço unitário da chapa em R$ (orçamento estimado). */
+  valorUnitario: number;
+  /**
+   * Padrões lisos (cores sólidas): true — peças podem girar.
+   * Padrões amadeirados (com veio): false — sem rotação.
+   */
+  permiteRotacao: boolean;
   ativo: boolean;
   criadoEm: string;
   atualizadoEm: string;

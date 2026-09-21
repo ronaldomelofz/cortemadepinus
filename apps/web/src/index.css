@@ -1,18 +1,18 @@
 @import 'tailwindcss';
 
 @theme {
-  --color-madeira-50: #fdf8f2;
-  --color-madeira-100: #f7e9d8;
-  --color-madeira-200: #eed3b1;
-  --color-madeira-300: #e0b483;
-  --color-madeira-400: #cf9155;
-  --color-madeira-500: #bd7436;
-  --color-madeira-600: #a05c2b;
-  --color-madeira-700: #7c4a21;
-  --color-madeira-800: #5c3719;
-  --color-madeira-900: #3d2411;
+  --color-madeira-50: #faf6f1;
+  --color-madeira-100: #f3e8da;
+  --color-madeira-200: #e6d0b4;
+  --color-madeira-300: #d4b089;
+  --color-madeira-400: #c08a55;
+  --color-madeira-500: #a86b35;
+  --color-madeira-600: #8f5529;
+  --color-madeira-700: #744525;
+  --color-madeira-800: #5c381f;
+  --color-madeira-900: #3f2615;
 
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-sans: 'Source Sans 3', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
 html {
@@ -20,28 +20,48 @@ html {
 }
 
 body {
-  @apply bg-stone-50 text-stone-800 antialiased;
+  @apply bg-madeira-50 text-stone-800 antialiased;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 0% -10%, rgb(243 232 218 / 0.9), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 100% 0%, rgb(230 208 180 / 0.35), transparent 50%);
+  background-attachment: fixed;
+  min-height: 100%;
 }
 
-/* Tabela de pecas: mantem as celulas compactas e legiveis na digitacao rapida. */
+/* Tabela de pecas: celulas compactas alinhadas ao cabecalho. */
 .celula-numerica {
-  @apply w-full rounded-md border border-stone-200 bg-white px-2 py-1.5 text-right text-sm tabular-nums outline-none transition focus:border-madeira-500 focus:ring-2 focus:ring-madeira-200;
+  @apply w-full rounded-lg border border-stone-200 bg-white px-2 py-2 text-right text-sm tabular-nums outline-none transition placeholder:text-stone-300 focus:border-madeira-500 focus:ring-2 focus:ring-madeira-200/70;
 }
 
 .celula-texto {
-  @apply w-full rounded-md border border-stone-200 bg-white px-2 py-1.5 text-sm outline-none transition focus:border-madeira-500 focus:ring-2 focus:ring-madeira-200;
+  @apply w-full rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-sm outline-none transition placeholder:text-stone-300 focus:border-madeira-500 focus:ring-2 focus:ring-madeira-200/70;
 }
 
 .campo {
-  @apply w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm outline-none transition placeholder:text-stone-400 focus:border-madeira-500 focus:ring-2 focus:ring-madeira-200 disabled:bg-stone-100;
+  @apply w-full rounded-xl border border-stone-200 bg-white px-3.5 py-2.5 text-sm shadow-sm outline-none transition placeholder:text-stone-400 focus:border-madeira-500 focus:ring-2 focus:ring-madeira-200/80 disabled:bg-stone-100;
 }
 
 .rotulo {
-  @apply mb-1 block text-xs font-semibold uppercase tracking-wide text-stone-500;
+  @apply mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-500;
 }
 
 .cartao {
-  @apply rounded-2xl border border-stone-200 bg-white shadow-sm;
+  @apply rounded-2xl border border-stone-200/80 bg-white/95 shadow-[0_10px_40px_-24px_rgba(63,38,21,0.35)] backdrop-blur-sm;
+}
+
+.linha-peca-nova {
+  background: linear-gradient(90deg, rgb(243 232 218 / 0.95), rgb(250 246 241 / 0.7) 40%, rgb(255 255 255 / 0.5));
+  box-shadow: inset 3px 0 0 0 #a86b35;
+  animation: destacar-linha 1.2s ease-out;
+}
+
+@keyframes destacar-linha {
+  0% {
+    background-color: rgb(224 180 137 / 0.55);
+  }
+  100% {
+    background-color: transparent;
+  }
 }
 
 .grade-etiquetas {
@@ -92,6 +112,7 @@ body {
 
   body {
     background: #fff !important;
+    background-image: none !important;
   }
 
   .pagina-a4-paisagem {

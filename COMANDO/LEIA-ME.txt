@@ -1,0 +1,40 @@
+MadePinus - Pasta COMANDO
+=========================
+
+Arquivos
+--------
+INICIAR-SISTEMA.bat     <- execute este apos reiniciar o PC (ou deixe no boot)
+INSTALAR-NO-BOOT.bat    <- coloca o atalho na pasta Inicializar do Windows
+iniciar-sistema.ps1     <- motor (nao precisa abrir manualmente)
+config.env              <- porta, preferencia de tunel, atualizar Netlify
+logs\                   <- logs de cada inicializacao
+
+O que o INICIAR-SISTEMA faz
+----------------------------
+1. Confere / sobe a API local (porta 4000)
+2. Aplica migracoes do banco se preciso
+3. Sobe tunel HTTPS (ngrok; se falhar, tenta Cloudflare)
+4. Testa /saude local e publico
+5. Se a URL publica mudou, atualiza o Netlify e faz deploy
+6. Grava logs em COMANDO\logs\
+
+Uso rapido
+----------
+1. Duplo clique em INICIAR-SISTEMA.bat
+2. Espere a mensagem [OK] Sistema pronto
+3. Site: https://cortemadepinus.netlify.app
+4. API local: http://127.0.0.1:4000/saude
+
+Boot automatico
+---------------
+1. Execute INSTALAR-NO-BOOT.bat uma vez
+2. No proximo login do Windows o sistema sobe sozinho
+
+Se der erro
+-----------
+Abra a pasta logs\ e leia o arquivo erros-DATA.log mais recente.
+Causas comuns:
+- Node.js / ngrok nao instalados
+- apps\api\.env ausente
+- Sem internet (tunel e Netlify falham; API local ainda funciona)
+- Firewall bloqueando a porta 4000

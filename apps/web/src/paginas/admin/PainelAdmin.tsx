@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { formatarData, formatarM2, STATUS_LABEL, STATUS_PEDIDO, type StatusPedido } from '@cortemadepinus/shared';
+import { formatarData, formatarM2, STATUS_PEDIDO, type StatusPedido } from '@cortemadepinus/shared';
 import { Aviso, Carregando, EtiquetaStatus, Metrica } from '../../componentes/ui';
+import { ResumoPedidosPorStatus } from '../../componentes/ResumoPedidosPorStatus';
 import { api, ErroApi, type PedidoComResumo } from '../../lib/api';
 
 interface Painel {
@@ -31,11 +32,19 @@ export function PainelAdmin() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-stone-900">Painel da central de serviços</h1>
-        <p className="mt-1 text-sm text-stone-500">
-          Visão geral dos planos de corte recebidos dos clientes.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-stone-900">Painel da central de serviços</h1>
+          <p className="mt-1 text-sm text-stone-500">
+            Visão geral dos planos de corte recebidos dos clientes.
+          </p>
+        </div>
+        <Link
+          to="/admin/novo"
+          className="rounded-lg bg-madeira-700 px-4 py-2 text-sm font-semibold text-white hover:bg-madeira-800"
+        >
+          Novo plano de corte
+        </Link>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -45,23 +54,11 @@ export function PainelAdmin() {
         <Metrica rotulo="Área em aberto" valor={formatarM2(painel.areaEmAberto)} />
       </div>
 
-      <section className="cartao p-5">
-        <h2 className="mb-3 text-base font-bold text-stone-900">Pedidos por status</h2>
-        <div className="flex flex-wrap gap-2">
-          {STATUS_PEDIDO.map((status) => (
-            <Link
-              key={status}
-              to={`/admin/pedidos?status=${status}`}
-              className="flex items-center gap-2 rounded-lg bg-stone-50 px-3 py-2 text-sm ring-1 ring-inset ring-stone-200 transition hover:bg-stone-100"
-            >
-              <span className="text-stone-600">{STATUS_LABEL[status]}</span>
-              <span className="rounded bg-white px-2 py-0.5 text-xs font-bold tabular-nums text-stone-800 ring-1 ring-inset ring-stone-200">
-                {painel.contagemPorStatus[status] ?? 0}
-              </span>
-            </Link>
-          ))}
-        </div>
-      </section>
+      <ResumoPedidosPorStatus
+        contagem={painel.contagemPorStatus}
+        basePath="/admin/pedidos"
+        statuses={STATUS_PEDIDO}
+      />
 
       <section className="cartao p-5">
         <h2 className="mb-3 text-base font-bold text-stone-900">Pedidos em andamento</h2>

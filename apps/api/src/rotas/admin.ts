@@ -1,24 +1,42 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import {
+  adminClienteCriarSchema,
   adminClienteSchema,
   calcularResumo,
   configuracaoCorteSchema,
   mudarStatusSchema,
   produtoMdfSchema,
   STATUS_PEDIDO,
+  type AdminClienteInput,
 } from '@cortemadepinus/shared';
 import { exigirAdmin, exigirAutenticacao, gerarHash } from '../lib/auth';
 import { contemTexto } from '../lib/busca';
 import { assincrono, naoEncontrado, requisicaoInvalida } from '../lib/erros';
 import { inclusaoPedido, mapearConfiguracao, mapearPedido, mapearProduto, mapearUsuario } from '../lib/mapear';
-import { garantirTransicao } from '../lib/pedidoServico';
+import { garantirTransicao, confirmarPagamentoPedido } from '../lib/pedidoServico';
 import { prisma } from '../prisma';
 import { obterConfiguracao } from './catalogo';
 
 export const rotasAdmin = Router();
 
 rotasAdmin.use(exigirAutenticacao, exigirAdmin);
+
+function dadosCadastraisCliente(dados: AdminClienteInput | Omit<AdminClienteInput, 'senha'> & { senha?: string }) {
+  return {
+    nome: dados.nome,
+    email: dados.email,
+    telefone: dados.telefone || null,
+    empresa: dados.empresa || null,
+    documento: dados.documento || null,
+    rua: dados.rua || null,
+    numero: dados.numero || null,
+    bairro: dados.bairro || null,
+    cidade: dados.cidade || null,
+    estado: dados.estado ? dados.estado.toUpperCase() : null,
+    cep: dados.cep || null,
+  };
+}
 
 const filtroSchema = z.object({
   status: z.enum(STATUS_PEDIDO).optional(),
@@ -95,6 +113,14 @@ rotasAdmin.patch(
   }),
 );
 
+rotasAdmin.post(
+  '/pedidos/:id/confirmar-pagamento',
+  assincrono(async (req, res) => {
+    const pedido = await confirmarPagamentoPedido(req.params.id, req.usuario!);
+    res.json({ pedido, resumo: calcularResumo(pedido) });
+  }),
+);
+
 rotasAdmin.get(
   '/clientes',
   assincrono(async (req, res) => {
@@ -108,11 +134,14 @@ rotasAdmin.get(
                 { nome: contemTexto(busca) },
                 { email: contemTexto(busca) },
                 { empresa: contemTexto(busca) },
+                { documento: contemTexto(busca) },
+                { cidade: contemTexto(busca) },
+                { cep: contemTexto(busca) },
               ],
             }
           : {}),
       },
-      orderBy: { criadoEm: 'desc' },
+      orderBy: [{ ativo: 'asc' }, { criadoEm: 'desc' }],
       include: { _count: { select: { pedidos: true } } },
     });
 
@@ -122,6 +151,25 @@ rotasAdmin.get(
         totalPedidos: cliente._count.pedidos,
       })),
     });
+  }),
+);
+
+rotasAdmin.post(
+  '/clientes',
+  assincrono(async (req, res) => {
+    const dados = adminClienteCriarSchema.parse(req.body);
+    const conflito = await prisma.usuario.findUnique({ where: { email: dados.email } });
+    if (conflito) throw requisicaoInvalida('Já existe uma conta com este e-mail');
+
+    const cliente = await prisma.usuario.create({
+      data: {
+        ...dadosCadastraisCliente(dados),
+        senhaHash: await gerarHash(dados.senha),
+        role: 'CLIENTE',
+        ativo: true,
+      },
+    });
+    res.status(201).json({ usuario: mapearUsuario(cliente), totalPedidos: 0 });
   }),
 );
 
@@ -140,11 +188,7 @@ rotasAdmin.put(
     const cliente = await prisma.usuario.update({
       where: { id: atual.id },
       data: {
-        nome: dados.nome,
-        email: dados.email,
-        telefone: dados.telefone || null,
-        empresa: dados.empresa || null,
-        documento: dados.documento || null,
+        ...dadosCadastraisCliente(dados),
         ...(dados.senha ? { senhaHash: await gerarHash(dados.senha) } : {}),
       },
     });
@@ -255,6 +299,8 @@ rotasAdmin.post(
         espessura: dados.espessura,
         largura: dados.largura,
         comprimento: dados.comprimento,
+        valorUnitario: dados.valorUnitario,
+        permiteRotacao: dados.permiteRotacao ?? true,
         ativo: dados.ativo ?? true,
       },
     });
@@ -284,6 +330,8 @@ rotasAdmin.put(
         espessura: dados.espessura,
         largura: dados.largura,
         comprimento: dados.comprimento,
+        valorUnitario: dados.valorUnitario,
+        permiteRotacao: dados.permiteRotacao ?? true,
         ativo: dados.ativo ?? atual.ativo,
       },
     });

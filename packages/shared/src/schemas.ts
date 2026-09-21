@@ -21,16 +21,36 @@ export const registroSchema = z.object({
 export type RegistroInput = z.infer<typeof registroSchema>;
 
 export const loginSchema = z.object({
-  email: z.string().trim().toLowerCase().email('E-mail inválido'),
+  /** Aceita e-mail completo ou só o usuário (ex.: ronalo → ronalo@…). */
+  email: z.string().trim().toLowerCase().min(3, 'Informe o usuário ou e-mail').max(120),
   senha: z.string().min(1, 'Informe a senha'),
 });
 export type LoginInput = z.infer<typeof loginSchema>;
+
+const camposEndereco = {
+  rua: z.string().trim().max(160).optional().or(z.literal('')),
+  numero: z.string().trim().max(20).optional().or(z.literal('')),
+  bairro: z.string().trim().max(80).optional().or(z.literal('')),
+  cidade: z.string().trim().max(80).optional().or(z.literal('')),
+  estado: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .max(2)
+    .optional()
+    .or(z.literal(''))
+    .refine((valor) => !valor || /^[A-Z]{2}$/.test(valor), {
+      message: 'Informe a UF com 2 letras',
+    }),
+  cep: z.string().trim().max(12).optional().or(z.literal('')),
+};
 
 export const perfilSchema = z.object({
   nome: z.string().trim().min(3).max(120),
   telefone: z.string().trim().max(30).optional().or(z.literal('')),
   empresa: z.string().trim().max(120).optional().or(z.literal('')),
   documento: z.string().trim().max(30).optional().or(z.literal('')),
+  ...camposEndereco,
 });
 export type PerfilInput = z.infer<typeof perfilSchema>;
 
@@ -48,6 +68,14 @@ export const adminClienteSchema = perfilSchema.extend({
 });
 export type AdminClienteInput = z.infer<typeof adminClienteSchema>;
 
+/** Cadastro de cliente pela central: senha obrigatória. */
+export const adminClienteCriarSchema = adminClienteSchema
+  .omit({ senha: true })
+  .extend({
+    senha: z.string().min(8, 'A senha deve ter ao menos 8 caracteres').max(72),
+  });
+export type AdminClienteCriarInput = z.infer<typeof adminClienteCriarSchema>;
+
 export const materialSchema = z.object({
   id: z.string().optional(),
   codigo: z
@@ -62,6 +90,7 @@ export const materialSchema = z.object({
   chapaAltura: z.number().positive().max(LIMITES.chapaMaxima),
   fornecidoPeloCliente: z.boolean().default(false),
   quantidadeChapas: z.number().int().min(0).max(9999).nullable().optional(),
+  permiteRotacao: z.boolean().default(true),
 });
 export type MaterialInput = z.infer<typeof materialSchema>;
 
@@ -77,10 +106,12 @@ export const pecaSchema = z.object({
     .max(LIMITES.quantidadeMaxima),
   largura: z
     .number()
+    .int('Largura deve ser inteira (mm, sem casas decimais)')
     .min(LIMITES.pecaMinima, `Largura mínima de ${LIMITES.pecaMinima} mm`)
     .max(LIMITES.chapaMaxima),
   altura: z
     .number()
+    .int('Altura deve ser inteira (mm, sem casas decimais)')
     .min(LIMITES.pecaMinima, `Altura mínima de ${LIMITES.pecaMinima} mm`)
     .max(LIMITES.chapaMaxima),
   descricao: z.string().trim().min(1, 'Descreva a peça').max(60),
@@ -166,6 +197,11 @@ export const produtoMdfSchema = z.object({
   espessura: z.number().positive('Espessura deve ser maior que zero').max(100),
   largura: z.number().positive('Informe a largura da chapa').max(LIMITES.chapaMaxima),
   comprimento: z.number().positive('Informe o comprimento da chapa').max(LIMITES.chapaMaxima),
+  valorUnitario: z
+    .number({ invalid_type_error: 'Valor unitário deve ser numérico' })
+    .min(0, 'O valor unitário não pode ser negativo')
+    .max(1_000_000, 'Valor unitário acima do limite'),
+  permiteRotacao: z.boolean().default(true),
   ativo: z.boolean().optional(),
 });
 export type ProdutoMdfInput = z.infer<typeof produtoMdfSchema>;

@@ -19,11 +19,15 @@ seccionadora.
 4. [Formato Corte MadePinus](#formato-corte-madepinus)
 5. [Rodando na sua máquina](#rodando-na-sua-máquina)
 6. [24/7 no Windows](#247-no-windows-sem-docker-e-sem-custo)
-7. [Servidor local com Docker](#servidor-local-com-docker)
-8. [Expondo a API para a internet](#expondo-a-api-para-a-internet)
-9. [Deploy no Netlify](#deploy-no-netlify)
-10. [Referência da API](#referência-da-api)
-11. [Backup e manutenção](#backup-e-manutenção)
+7. [API 24/7 em VPS + Coolify](#api-247-em-vps--coolify-recomendado)
+8. [Servidor local com Docker](#servidor-local-com-docker)
+9. [Expondo a API para a internet](#expondo-a-api-para-a-internet)
+10. [Deploy no Netlify](#deploy-no-netlify)
+11. [API própria no servidor + Netlify](docs/api-propria-netlify.md)
+12. [Tunel MadePinus 24/7](docs/tunel-madepinus-24x7.md)
+13. [Servidor local 100% gratis (sem tunel)](docs/servidor-local-sem-tunel.md)
+14. [Referência da API](#referência-da-api)
+15. [Backup e manutenção](#backup-e-manutenção)
 
 ---
 
@@ -199,6 +203,15 @@ A segunda linha registra uma tarefa nativa do Windows: a API sobe no boot, reini
 cair e grava log em `apps/api/dados/api.log`. Deixe o computador da central ligado (ou use um
 mini-PC que não desliga).
 
+## API 24/7 em VPS + Coolify (recomendado)
+
+Para o site público funcionar **com este computador desligado**, a API vai para uma **VPS barata**
+(Ubuntu) com **Coolify** (open source): Docker Compose, HTTPS e painel web. O passo a passo está em
+**[docs/api-coolify-vps.md](docs/api-coolify-vps.md)**.
+
+> Oracle Always Free (Ampere) **não é recomendada** aqui: em São Paulo costuma falhar com *Out of
+> capacity*. Guia antigo: [docs/api-oracle-cloud.md](docs/api-oracle-cloud.md).
+
 ## Servidor local com Docker
 
 O `docker-compose.yml` sobe a API com SQLite, backup diário do arquivo e (opcional) o túnel:
@@ -217,24 +230,28 @@ docker compose logs -f api
 
 ## Expondo a API para a internet
 
-O site fica no Netlify, então o navegador do cliente precisa alcançar a API do seu servidor. A forma
-recomendada é o **Cloudflare Tunnel**: ele cria uma saída HTTPS sem abrir porta no roteador e sem IP
-fixo.
+O site fica no Netlify, então o navegador do cliente precisa alcançar a API do seu servidor.
+A forma recomendada e o **Tunel MadePinus 24/7** (cloudflared no Windows, hostname fixo):
 
-1. Em <https://one.dash.cloudflare.com> → **Networks → Tunnels → Create a tunnel** (Cloudflared).
-2. Copie o token gerado para `TUNNEL_TOKEN` no `.env`.
-3. Configure o *public hostname*, por exemplo `api.cortemadepinus.com.br` → `http://api:4000`.
-4. Suba o túnel:
+Guia completo: [docs/tunel-madepinus-24x7.md](docs/tunel-madepinus-24x7.md)
+
+```powershell
+# No .env: TUNNEL_TOKEN=...  e  API_PUBLIC_URL=https://api.seudominio.com.br
+.\scripts\instalar-servico-windows.ps1
+.\scripts\instalar-tunel-madepinus.ps1 -IntegrarNetlify
+.\scripts\status-tunel-madepinus.ps1
+```
+
+Docker (alternativa):
 
 ```bash
 docker compose --profile tunel up -d
 ```
 
-5. No Netlify, defina `VITE_API_URL=https://api.cortemadepinus.com.br` e refaça o deploy.
-6. No `.env` do servidor, garanta `CORS_ORIGINS=https://cortemadepinus.netlify.app`.
+No Netlify, `VITE_API_URL` deve ser a mesma `API_PUBLIC_URL` (HTTPS).
+`CORS_ORIGINS` na API deve incluir `https://cortemadepinus.netlify.app`.
 
-Alternativas: `ngrok`, `frp` ou redirecionamento de porta com DDNS + Let's Encrypt. Em qualquer caso
-a API precisa responder em **HTTPS**, senão o navegador bloqueia a chamada vinda do Netlify.
+URL temporaria (teste): `.\scripts\expor-api-https.ps1` — nao use como producao 24/7.
 
 ## Deploy no Netlify
 

@@ -10,6 +10,7 @@ npm-debug.log*
 Thumbs.db
 .netlify/
 coverage/
+COMANDO/logs/
 apps/api/uploads/
 apps/api/dados/
 !apps/api/dados/.gitkeep
@@ -21,3 +22,5 @@ apps/api/dados/
 .idea/
 *.tsbuildinfo
 pacote-madepinus/
+CHAVES/
+SENHAS/

@@ -2,11 +2,14 @@ import { Router } from 'express';
 import { z } from 'zod';
 import {
   calcularResumo,
+  ehPapelCliente,
   exportarCsvCorteMadePinus,
   exportarRelatorioProducaoCsv,
   exportarTxtCorteMadePinus,
   mensagemSchema,
   nomeArquivo,
+  TIPOS_ANEXO,
+  type TipoAnexo,
 } from '@cortemadepinus/shared';
 import { exigirAutenticacao } from '../lib/auth';
 import { contemTexto } from '../lib/busca';
@@ -16,6 +19,7 @@ import {
   atualizarPedido,
   buscarPedidoAutorizado,
   criarPedido,
+  enviarPedidoCentral,
   garantirEdicaoDoCliente,
   reabrirPedido,
 } from '../lib/pedidoServico';
@@ -71,7 +75,20 @@ rotasPedidos.get(
 rotasPedidos.post(
   '/',
   assincrono(async (req, res) => {
-    const pedido = await criarPedido(req.usuario!.id, req.body);
+    let donoId = req.usuario!.id;
+    const corpo = { ...(req.body as Record<string, unknown>) };
+    const clienteIdInformado = typeof corpo.clienteId === 'string' ? corpo.clienteId : null;
+    delete corpo.clienteId;
+
+    if (req.usuario!.role === 'ADMIN' && clienteIdInformado) {
+      const cliente = await prisma.usuario.findFirst({
+        where: { id: clienteIdInformado, role: { in: ['CLIENTE', 'VENDEDOR'] }, ativo: true },
+      });
+      if (!cliente) throw requisicaoInvalida('Cliente ou vendedor inválido');
+      donoId = cliente.id;
+    }
+
+    const pedido = await criarPedido(donoId, corpo);
     res.status(201).json({ pedido, resumo: calcularResumo(pedido) });
   }),
 );
@@ -89,6 +106,7 @@ rotasPedidos.put(
   '/:id',
   assincrono(async (req, res) => {
     const registro = await buscarPedidoAutorizado(req.params.id, req.usuario!);
+    if (req.usuario!.role === 'OPERADOR') throw proibido('Operador não pode alterar o plano de corte');
     if (req.usuario!.role !== 'ADMIN') garantirEdicaoDoCliente(registro.status);
     const pedido = await atualizarPedido(registro.id, req.body);
     res.json({ pedido, resumo: calcularResumo(pedido) });
@@ -99,8 +117,12 @@ rotasPedidos.delete(
   '/:id',
   assincrono(async (req, res) => {
     const registro = await buscarPedidoAutorizado(req.params.id, req.usuario!);
-    if (req.usuario!.role !== 'ADMIN' && registro.status !== 'RASCUNHO') {
-      throw requisicaoInvalida('Somente rascunhos podem ser excluídos');
+    if (req.usuario!.role === 'OPERADOR') throw proibido('Operador não pode excluir pedidos');
+    /** Após o envio (e confirmação de pagamento pela central), o pedido não pode ser excluído. */
+    if (registro.status !== 'RASCUNHO') {
+      throw requisicaoInvalida(
+        'Só é possível excluir pedidos em rascunho. Depois que a central recebe o pedido e confirma o pagamento, a exclusão não é permitida.',
+      );
     }
     registro.anexos.forEach((anexo) => removerArquivo(anexo.nomeArmazenado));
     await prisma.pedido.delete({ where: { id: registro.id } });
@@ -111,27 +133,7 @@ rotasPedidos.delete(
 rotasPedidos.post(
   '/:id/enviar',
   assincrono(async (req, res) => {
-    const registro = await buscarPedidoAutorizado(req.params.id, req.usuario!);
-    if (registro.status !== 'RASCUNHO') throw requisicaoInvalida('Este pedido já foi enviado');
-    if (registro.pecas.length === 0) throw requisicaoInvalida('Adicione peças antes de enviar');
-
-    const atualizado = await prisma.pedido.update({
-      where: { id: registro.id },
-      data: {
-        status: 'ENVIADO',
-        enviadoEm: new Date(),
-        historico: {
-          create: {
-            status: 'ENVIADO',
-            nota: 'Plano de corte enviado para a central de serviços',
-            autorId: req.usuario!.id,
-          },
-        },
-      },
-      include: inclusaoPedido,
-    });
-
-    const pedido = mapearPedido(atualizado);
+    const pedido = await enviarPedidoCentral(req.params.id, req.usuario!);
     res.json({ pedido, resumo: calcularResumo(pedido) });
   }),
 );
@@ -168,6 +170,15 @@ rotasPedidos.post(
     const arquivos = (req.files as Express.Multer.File[] | undefined) ?? [];
     if (arquivos.length === 0) throw requisicaoInvalida('Nenhum arquivo enviado');
 
+    const tipoBruto = typeof req.body?.tipo === 'string' ? req.body.tipo : 'GERAL';
+    const tipo: TipoAnexo = TIPOS_ANEXO.includes(tipoBruto as TipoAnexo)
+      ? (tipoBruto as TipoAnexo)
+      : 'GERAL';
+
+    if (ehPapelCliente(req.usuario!.role) && registro.status !== 'RASCUNHO') {
+      throw proibido('Anexos só podem ser enviados enquanto o pedido é rascunho');
+    }
+
     await prisma.anexo.createMany({
       data: arquivos.map((arquivo) => ({
         pedidoId: registro.id,
@@ -175,6 +186,7 @@ rotasPedidos.post(
         nomeArmazenado: arquivo.filename,
         mimeType: arquivo.mimetype,
         tamanho: arquivo.size,
+        tipo,
       })),
     });
 
@@ -200,6 +212,7 @@ rotasPedidos.delete(
   '/:id/anexos/:anexoId',
   assincrono(async (req, res) => {
     const registro = await buscarPedidoAutorizado(req.params.id, req.usuario!);
+    if (req.usuario!.role === 'OPERADOR') throw proibido('Operador não pode remover anexos');
     if (req.usuario!.role !== 'ADMIN' && registro.status !== 'RASCUNHO') {
       throw proibido('Anexos só podem ser removidos enquanto o pedido é rascunho');
     }

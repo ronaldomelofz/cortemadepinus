@@ -22,6 +22,7 @@ export interface MaterialVisual {
   descricao: string;
   chapaLargura: number | string;
   chapaAltura: number | string;
+  permiteRotacao?: boolean;
 }
 
 export interface PecaVisual {
@@ -122,6 +123,10 @@ export function montarResultado(
     }))
     .filter((m) => m.codigo > 0 && m.largura > 0 && m.altura > 0);
 
+  const rotacaoPorMaterial = new Map(
+    materiais.map((m) => [numero(m.codigo), m.permiteRotacao !== false]),
+  );
+
   const porMaterial = new Map<number, ItemParaOtimizar[]>();
   pecas.forEach((peca) => {
     const material = numero(peca.materialCodigo);
@@ -137,6 +142,7 @@ export function montarResultado(
       altura,
       quantidade,
       veio: peca.veio === 'COMPRIMENTO' || peca.veio === 'LARGURA' ? peca.veio : 'INDIFERENTE',
+      permiteRotacao: rotacaoPorMaterial.get(material) !== false,
     });
     porMaterial.set(material, lista);
   });
@@ -401,6 +407,13 @@ export function VisualizacaoPlano({
 
   function girarPecaSelecionada() {
     if (!selecao || !pecaSelecionada) return;
+    const pecaOrigem = pecas.find((item) => numero(item.codigo) === pecaSelecionada.codigo);
+    const materialCodigo = pecaOrigem ? numero(pecaOrigem.materialCodigo) : 0;
+    const material = materiais.find((item) => numero(item.codigo) === materialCodigo);
+    if (material && material.permiteRotacao === false) {
+      setAvisoLayout('Este material é amadeirado e não permite rotação de peças.');
+      return;
+    }
     if (veioDaPeca(pecas, pecaSelecionada.codigo) !== 'INDIFERENTE') {
       setAvisoLayout('Esta peça tem veio definido e não pode girar no plano.');
       return;
@@ -1191,14 +1204,16 @@ function DialogoPecaPlano({
           <Campo
             rotulo="Largura (mm)"
             inputMode="numeric"
+            pattern="[0-9]*"
             value={largura}
-            onChange={(evento) => setLargura(evento.target.value)}
+            onChange={(evento) => setLargura(evento.target.value.replace(/\D/g, ''))}
           />
           <Campo
             rotulo="Altura (mm)"
             inputMode="numeric"
+            pattern="[0-9]*"
             value={altura}
-            onChange={(evento) => setAltura(evento.target.value)}
+            onChange={(evento) => setAltura(evento.target.value.replace(/\D/g, ''))}
           />
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
