@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import {
   formatarData,
   formatarM2,
-  pedidoEditavelPeloCliente,
+  pedidoExcluivelPeloCliente,
   STATUS_LABEL,
   STATUS_PEDIDO,
   type StatusPedido,
@@ -36,16 +36,16 @@ export function PedidosAdmin() {
     return () => clearTimeout(atrasar);
   }, [status, busca]);
 
-  async function excluirRascunho(pedido: PedidoComResumo) {
-    if (!pedidoEditavelPeloCliente(pedido.status)) {
+  async function excluirPedido(pedido: PedidoComResumo) {
+    if (!pedidoExcluivelPeloCliente(pedido.status)) {
       setErro(
-        'Só é possível excluir pedidos em rascunho. Após confirmação de pagamento, a exclusão não é permitida.',
+        'Não é possível excluir: a central já confirmou o pagamento e iniciou o serviço de corte.',
       );
       return;
     }
     if (
       !confirm(
-        `Excluir o rascunho #${String(pedido.numero).padStart(5, '0')} (${pedido.titulo})? Esta ação não pode ser desfeita.`,
+        `Excluir o pedido #${String(pedido.numero).padStart(5, '0')} (${pedido.titulo})? Esta ação não pode ser desfeita.`,
       )
     ) {
       return;
@@ -57,7 +57,7 @@ export function PedidosAdmin() {
       setPedidos((lista) => lista.filter((item) => item.id !== pedido.id));
       setTotal((atual) => Math.max(0, atual - 1));
     } catch (falha) {
-      setErro(falha instanceof ErroApi ? falha.message : 'Não foi possível excluir o rascunho');
+      setErro(falha instanceof ErroApi ? falha.message : 'Não foi possível excluir o pedido');
     } finally {
       setExcluindoId(null);
     }
@@ -126,7 +126,7 @@ export function PedidosAdmin() {
             </thead>
             <tbody className="divide-y divide-stone-100">
               {pedidos.map((pedido) => {
-                const rascunho = pedidoEditavelPeloCliente(pedido.status);
+                const podeExcluir = pedidoExcluivelPeloCliente(pedido.status);
                 const excluindo = excluindoId === pedido.id;
                 return (
                   <tr key={pedido.id} className="transition hover:bg-stone-50">
@@ -181,12 +181,12 @@ export function PedidosAdmin() {
                         >
                           Abrir
                         </Link>
-                        {rascunho && (
+                        {podeExcluir && (
                           <Botao
                             type="button"
                             variante="perigo"
                             carregando={excluindo}
-                            onClick={() => void excluirRascunho(pedido)}
+                            onClick={() => void excluirPedido(pedido)}
                             className="!px-3 !py-1.5 !text-xs"
                           >
                             Excluir

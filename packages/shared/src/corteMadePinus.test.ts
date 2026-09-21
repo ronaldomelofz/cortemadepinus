@@ -110,7 +110,9 @@ test('importação aceita colagem do Excel com cabeçalho e vírgula decimal', (
   ].join('\n');
   const { pecas, erros } = importarPecas(conteudo);
   assert.equal(pecas.length, 1);
-  assert.equal(pecas[0].largura, 1200.5);
+  // Medidas em mm inteiros: 1.200,5 → 1201
+  assert.equal(pecas[0].largura, 1201);
+  assert.equal(pecas[0].altura, 350);
   assert.equal(erros.length, 1);
 });
 

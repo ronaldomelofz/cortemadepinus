@@ -6,6 +6,7 @@ import {
   formatarM2,
   formatarMoeda,
   pedidoEditavelPeloCliente,
+  pedidoExcluivelPeloCliente,
   pedidoProntoParaEnvio,
   pedidoReabivelPeloCliente,
   SERRA_PADRAO_MM,
@@ -124,6 +125,7 @@ export function DetalhePedido() {
 
   const materiaisPorId = new Map(pedido.materiais.map((m) => [m.id, m]));
   const podeEditar = pedidoEditavelPeloCliente(pedido.status);
+  const podeExcluir = pedidoExcluivelPeloCliente(pedido.status) && !ehOperador;
   const podeReabrir = !ehCentral && pedidoReabivelPeloCliente(pedido.status);
   const destinoEdicao = `${basePedidos}/pedidos/${pedido.id}/editar`;
   const pedidoId = pedido.id;
@@ -199,12 +201,12 @@ export function DetalhePedido() {
               Editar plano de corte
             </Botao>
           )}
-          {podeEditar && (
+          {podeExcluir && (
             <Botao
               variante="perigo"
               carregando={ocupado}
               onClick={() => {
-                if (!confirm('Excluir este rascunho? A ação não pode ser desfeita.')) return;
+                if (!confirm('Excluir este pedido? A ação não pode ser desfeita.')) return;
                 void executar(async () => {
                   await api.excluirPedido(pedido.id);
                   navegar(basePedidos);

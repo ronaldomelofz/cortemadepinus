@@ -4,6 +4,7 @@ import {
   formatarData,
   formatarM2,
   pedidoEditavelPeloCliente,
+  pedidoExcluivelPeloCliente,
   pedidoProntoParaEnvio,
   STATUS_LABEL,
   STATUS_PEDIDO,
@@ -70,14 +71,16 @@ export function MeusPedidos() {
     }
   }
 
-  async function excluirRascunho(pedido: PedidoComResumo) {
-    if (!pedidoEditavelPeloCliente(pedido.status)) {
-      setErroAcao('Só é possível excluir pedidos que ainda não foram enviados para a central.');
+  async function excluirPedido(pedido: PedidoComResumo) {
+    if (!pedidoExcluivelPeloCliente(pedido.status)) {
+      setErroAcao(
+        'Não é possível excluir: a central já confirmou o pagamento e iniciou o serviço de corte.',
+      );
       return;
     }
     if (
       !confirm(
-        `Excluir o rascunho #${String(pedido.numero).padStart(5, '0')} (${pedido.titulo})? Esta ação não pode ser desfeita.`,
+        `Excluir o pedido #${String(pedido.numero).padStart(5, '0')} (${pedido.titulo})? Esta ação não pode ser desfeita.`,
       )
     ) {
       return;
@@ -89,7 +92,7 @@ export function MeusPedidos() {
       await api.excluirPedido(pedido.id);
       setPedidos((lista) => lista.filter((item) => item.id !== pedido.id));
     } catch (falha) {
-      setErroAcao(falha instanceof ErroApi ? falha.message : 'Não foi possível excluir o rascunho');
+      setErroAcao(falha instanceof ErroApi ? falha.message : 'Não foi possível excluir o pedido');
     } finally {
       setOcupadoId(null);
     }
@@ -162,6 +165,7 @@ export function MeusPedidos() {
         <div className="grid gap-3">
           {pedidos.map((pedido) => {
             const rascunho = pedidoEditavelPeloCliente(pedido.status);
+            const podeExcluir = pedidoExcluivelPeloCliente(pedido.status);
             const ocupado = ocupadoId === pedido.id;
             return (
               <div
@@ -217,12 +221,12 @@ export function MeusPedidos() {
                       {rascunho ? 'Ver' : 'Abrir'}
                     </Botao>
                   </Link>
-                  {rascunho && (
+                  {podeExcluir && (
                     <Botao
                       variante="perigo"
                       carregando={ocupado}
-                      onClick={() => void excluirRascunho(pedido)}
-                      title="Excluir este rascunho. Indisponível após o envio à central."
+                      onClick={() => void excluirPedido(pedido)}
+                      title="Disponível até a central confirmar o pagamento e iniciar o corte."
                     >
                       Excluir
                     </Botao>

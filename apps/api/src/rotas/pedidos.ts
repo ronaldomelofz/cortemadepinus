@@ -118,10 +118,10 @@ rotasPedidos.delete(
   assincrono(async (req, res) => {
     const registro = await buscarPedidoAutorizado(req.params.id, req.usuario!);
     if (req.usuario!.role === 'OPERADOR') throw proibido('Operador não pode excluir pedidos');
-    /** Após o envio (e confirmação de pagamento pela central), o pedido não pode ser excluído. */
-    if (registro.status !== 'RASCUNHO') {
+    /** Após confirmação de pagamento / início do serviço pela central, não exclui. */
+    if (registro.status !== 'RASCUNHO' && registro.status !== 'ENVIADO') {
       throw requisicaoInvalida(
-        'Só é possível excluir pedidos em rascunho. Depois que a central recebe o pedido e confirma o pagamento, a exclusão não é permitida.',
+        'Não é possível excluir este pedido. A central já confirmou o pagamento e iniciou o serviço de corte.',
       );
     }
     registro.anexos.forEach((anexo) => removerArquivo(anexo.nomeArmazenado));

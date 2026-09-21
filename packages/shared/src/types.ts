@@ -86,6 +86,14 @@ export function pedidoAguardandoConfirmacaoPagamento(status: StatusPedido): bool
   return status === 'ENVIADO';
 }
 
+/**
+ * Cliente pode excluir enquanto o pedido ainda não teve pagamento confirmado
+ * nem início do serviço pela central (rascunho ou aguardando confirmação).
+ */
+export function pedidoExcluivelPeloCliente(status: StatusPedido): boolean {
+  return status === 'RASCUNHO' || status === 'ENVIADO';
+}
+
 export function pedidoTemComprovante(anexos: Pick<Anexo, 'tipo'>[]): boolean {
   return anexos.some((anexo) => anexo.tipo === 'COMPROVANTE');
 }
