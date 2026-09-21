@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   formatarM2,
@@ -36,16 +36,40 @@ import {
 import { useSessao } from '../lib/sessao';
 
 type EstadoNavegacaoEditor = { mensagemOk?: string };
+type StatusAutosave = 'ocioso' | 'pendente' | 'salvando' | 'salvo' | 'erro';
+
+const ATRASO_AUTOSAVE_MS = 1600;
+
+function payloadValido(formulario: PedidoForm) {
+  const payload = formularioParaPayload(formulario);
+  const validacao = pedidoCompletoSchema.safeParse(payload);
+  return validacao.success ? validacao.data : null;
+}
+
+function rotuloAutosave(status: StatusAutosave, salvoEm: Date | null): string | null {
+  if (status === 'pendente') return 'Alterações pendentes…';
+  if (status === 'salvando') return 'Salvando automaticamente…';
+  if (status === 'erro') return 'Falha ao salvar automaticamente';
+  if (status === 'salvo' && salvoEm) {
+    return `Salvo automaticamente às ${salvoEm.toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })}`;
+  }
+  return null;
+}
 
 export function EditorPedido() {
-  const { id } = useParams<{ id: string }>();
+  const { id: idRota } = useParams<{ id: string }>();
   const navegar = useNavigate();
   const location = useLocation();
   const { usuario } = useSessao();
   const base = basePedidosPorPapel(usuario?.role);
   const ehAdmin = usuario?.role === 'ADMIN';
+  const [pedidoId, setPedidoId] = useState<string | undefined>(idRota);
   const [formulario, setFormulario] = useState<PedidoForm>(() => formularioInicial());
-  const [carregando, setCarregando] = useState(Boolean(id));
+  const [carregando, setCarregando] = useState(Boolean(idRota));
   const [salvando, setSalvando] = useState(false);
   const [reabrindo, setReabrindo] = useState(false);
   const [erroGeral, setErroGeral] = useState<string | null>(null);
@@ -53,7 +77,7 @@ export function EditorPedido() {
   const [errosPecas, setErrosPecas] = useState<Record<number, string>>({});
   const [importando, setImportando] = useState(false);
   const [mensagemOk, setMensagemOk] = useState<string | null>(null);
-  const [statusPedido, setStatusPedido] = useState<StatusPedido | null>(id ? null : 'RASCUNHO');
+  const [statusPedido, setStatusPedido] = useState<StatusPedido | null>(idRota ? null : 'RASCUNHO');
   const [produtos, setProdutos] = useState<ProdutoMdf[]>([]);
   const [catalogoPronto, setCatalogoPronto] = useState(false);
   const [clienteId, setClienteId] = useState('');
@@ -63,9 +87,25 @@ export function EditorPedido() {
     valorCorte: VALOR_CORTE_PADRAO,
   });
   const [chavesDestaque, setChavesDestaque] = useState<Set<string>>(() => new Set());
+  const [autoStatus, setAutoStatus] = useState<StatusAutosave>('ocioso');
+  const [salvoEm, setSalvoEm] = useState<Date | null>(null);
+
+  const formularioRef = useRef(formulario);
+  const pedidoIdRef = useRef(pedidoId);
+  const clienteIdRef = useRef(clienteId);
+  const pularProximoCarregamento = useRef(false);
+  const pausarAutosave = useRef(true);
+  const ultimoPayloadSalvo = useRef('');
+  const geracaoAutosave = useRef(0);
+  const emGravacao = useRef(false);
+
+  formularioRef.current = formulario;
+  pedidoIdRef.current = pedidoId;
+  clienteIdRef.current = clienteId;
 
   const podeEditar = !statusPedido || pedidoEditavelPeloCliente(statusPedido);
   const podeReabrir = Boolean(statusPedido && pedidoReabivelPeloCliente(statusPedido));
+  const textoAutosave = rotuloAutosave(autoStatus, salvoEm);
 
   function destacarChaves(chaves: string[]) {
     setChavesDestaque(new Set(chaves));
@@ -80,6 +120,11 @@ export function EditorPedido() {
 
   /** Grava o plano em Meus pedidos e deixa o editor pronto para o próximo. */
   function prepararNovoPlano(mensagem: string) {
+    pausarAutosave.current = true;
+    ultimoPayloadSalvo.current = '';
+    setPedidoId(undefined);
+    setAutoStatus('ocioso');
+    setSalvoEm(null);
     setStatusPedido('RASCUNHO');
     setErrosPecas({});
     setErrosGerais([]);
@@ -89,7 +134,7 @@ export function EditorPedido() {
     setFormulario(aplicarCatalogo(formularioInicial(), produtos));
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
-    if (id) {
+    if (idRota) {
       navegar(`${base}/novo`, {
         replace: true,
         state: { mensagemOk: mensagem } satisfies EstadoNavegacaoEditor,
@@ -97,6 +142,9 @@ export function EditorPedido() {
       return;
     }
     setMensagemOk(mensagem);
+    window.setTimeout(() => {
+      pausarAutosave.current = false;
+    }, 400);
   }
 
   useEffect(() => {
@@ -105,6 +153,12 @@ export function EditorPedido() {
     setMensagemOk(estado.mensagemOk);
     navegar(location.pathname, { replace: true, state: null });
   }, [location.pathname, location.state, navegar]);
+
+  useEffect(() => {
+    if (idRota && idRota !== pedidoIdRef.current) {
+      setPedidoId(idRota);
+    }
+  }, [idRota]);
 
   useEffect(() => {
     let cancelado = false;
@@ -121,17 +175,29 @@ export function EditorPedido() {
       setConfigCorte(conf.configuracao);
       setCatalogoPronto(true);
 
-      if (!id) {
+      if (!idRota) {
         setFormulario((atual) => aplicarCatalogo(atual, catalogo.itens));
+        pausarAutosave.current = false;
         return;
       }
 
+      if (pularProximoCarregamento.current) {
+        pularProximoCarregamento.current = false;
+        pausarAutosave.current = false;
+        setCarregando(false);
+        return;
+      }
+
+      pausarAutosave.current = true;
       setCarregando(true);
       try {
-        const { pedido } = await api.obterPedido(id);
+        const { pedido } = await api.obterPedido(idRota);
         if (cancelado) return;
+        setPedidoId(pedido.id);
         setStatusPedido(pedido.status);
-        setFormulario(aplicarCatalogo(pedidoParaFormulario(pedido), catalogo.itens));
+        const form = aplicarCatalogo(pedidoParaFormulario(pedido), catalogo.itens);
+        setFormulario(form);
+        ultimoPayloadSalvo.current = JSON.stringify(formularioParaPayload(form));
         if (pedidoReabivelPeloCliente(pedido.status)) {
           setErroGeral(null);
           setMensagemOk(
@@ -143,7 +209,12 @@ export function EditorPedido() {
       } catch (falha) {
         if (!cancelado) setErroGeral(falha instanceof ErroApi ? falha.message : 'Falha ao carregar');
       } finally {
-        if (!cancelado) setCarregando(false);
+        if (!cancelado) {
+          setCarregando(false);
+          window.setTimeout(() => {
+            pausarAutosave.current = false;
+          }, 300);
+        }
       }
     }
 
@@ -151,15 +222,15 @@ export function EditorPedido() {
     return () => {
       cancelado = true;
     };
-  }, [id]);
+  }, [idRota]);
 
   useEffect(() => {
-    if (!ehAdmin || id) return;
+    if (!ehAdmin || pedidoId) return;
     api
       .listarClientes()
       .then((resposta) => setClientes(resposta.itens))
       .catch(() => setClientes([]));
-  }, [ehAdmin, id]);
+  }, [ehAdmin, pedidoId]);
 
   const resumo = useMemo(() => resumirFormulario(formulario), [formulario]);
   const cortes = useMemo(() => {
@@ -316,34 +387,128 @@ export function EditorPedido() {
 
   /* ---------------------------- Gravação ---------------------------- */
 
-  function validar() {
+  function validar(mostrarErros = true) {
     const payload = formularioParaPayload(formulario);
     const validacao = pedidoCompletoSchema.safeParse(payload);
     if (validacao.success) {
-      setErrosPecas({});
-      setErrosGerais([]);
-      return payload;
+      if (mostrarErros) {
+        setErrosPecas({});
+        setErrosGerais([]);
+      }
+      return validacao.data;
     }
 
-    const porPeca: Record<number, string> = {};
-    const gerais: string[] = [];
-    validacao.error.issues.forEach((problema) => {
-      if (problema.path[0] === 'pecas' && typeof problema.path[1] === 'number') {
-        porPeca[problema.path[1]] = problema.message;
-      } else {
-        gerais.push(problema.message);
-      }
-    });
-    setErrosPecas(porPeca);
-    setErrosGerais([...new Set(gerais)]);
+    if (mostrarErros) {
+      const porPeca: Record<number, string> = {};
+      const gerais: string[] = [];
+      validacao.error.issues.forEach((problema) => {
+        if (problema.path[0] === 'pecas' && typeof problema.path[1] === 'number') {
+          porPeca[problema.path[1]] = problema.message;
+        } else {
+          gerais.push(problema.message);
+        }
+      });
+      setErrosPecas(porPeca);
+      setErrosGerais([...new Set(gerais)]);
+    }
     return null;
   }
+
+  async function persistirRascunho(opcoes: {
+    automatico: boolean;
+    payload?: NonNullable<ReturnType<typeof payloadValido>>;
+  }) {
+    const payload =
+      opcoes.payload ?? (opcoes.automatico ? payloadValido(formularioRef.current) : validar(true));
+    if (!payload) {
+      if (opcoes.automatico) setAutoStatus('ocioso');
+      return null;
+    }
+
+    const assinatura = JSON.stringify(payload);
+    if (opcoes.automatico && assinatura === ultimoPayloadSalvo.current) {
+      setAutoStatus('salvo');
+      return pedidoIdRef.current ?? null;
+    }
+
+    if (emGravacao.current && opcoes.automatico) {
+      setAutoStatus('pendente');
+      window.setTimeout(() => {
+        void persistirRascunho({ automatico: true });
+      }, ATRASO_AUTOSAVE_MS);
+      return null;
+    }
+
+    const idAtual = pedidoIdRef.current;
+    const geracaoInicio = geracaoAutosave.current;
+    if (opcoes.automatico) setAutoStatus('salvando');
+    emGravacao.current = true;
+
+    try {
+      const resposta = idAtual
+        ? await api.atualizarPedido(idAtual, payload)
+        : await api.criarPedido(
+            payload,
+            ehAdmin && clienteIdRef.current ? clienteIdRef.current : undefined,
+          );
+
+      ultimoPayloadSalvo.current = assinatura;
+      setStatusPedido(resposta.pedido.status);
+      setPedidoId(resposta.pedido.id);
+      setSalvoEm(new Date());
+      if (opcoes.automatico && geracaoInicio !== geracaoAutosave.current) {
+        setAutoStatus('pendente');
+      } else {
+        setAutoStatus('salvo');
+      }
+      if (opcoes.automatico) setErroGeral(null);
+
+      if (!idAtual) {
+        pularProximoCarregamento.current = true;
+        navegar(`${base}/pedidos/${resposta.pedido.id}/editar`, { replace: true });
+      }
+
+      return resposta.pedido.id;
+    } catch (falha) {
+      const mensagem = falha instanceof ErroApi ? falha.message : 'Não foi possível salvar o pedido';
+      if (opcoes.automatico) setAutoStatus('erro');
+      setErroGeral(mensagem);
+      return null;
+    } finally {
+      emGravacao.current = false;
+    }
+  }
+
+  useEffect(() => {
+    if (!podeEditar || carregando || !catalogoPronto || pausarAutosave.current) return;
+
+    setAutoStatus((atual) => (atual === 'salvo' || atual === 'ocioso' ? 'pendente' : atual));
+    const geracao = ++geracaoAutosave.current;
+    const timer = window.setTimeout(() => {
+      if (geracao !== geracaoAutosave.current) return;
+      if (pausarAutosave.current || !podeEditar) return;
+      void persistirRascunho({ automatico: true });
+    }, ATRASO_AUTOSAVE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [formulario, clienteId, podeEditar, carregando, catalogoPronto]);
+
+  useEffect(() => {
+    const avisar = (evento: BeforeUnloadEvent) => {
+      if (autoStatus === 'pendente' || autoStatus === 'salvando') {
+        evento.preventDefault();
+        evento.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', avisar);
+    return () => window.removeEventListener('beforeunload', avisar);
+  }, [autoStatus]);
 
   async function salvar(enviar: boolean) {
     if (!podeEditar) return;
     setErroGeral(null);
     setMensagemOk(null);
-    const payload = validar();
+    const payload = validar(true);
     if (!payload) return;
 
     if (enviar && !confirmarEnvioParaCentral(payload.pecas.reduce((t, p) => t + p.quantidade, 0))) {
@@ -351,39 +516,40 @@ export function EditorPedido() {
     }
 
     setSalvando(true);
+    pausarAutosave.current = true;
     try {
-      const resposta = id
-        ? await api.atualizarPedido(id, payload)
-        : await api.criarPedido(payload, ehAdmin && clienteId ? clienteId : undefined);
-      setStatusPedido(resposta.pedido.status);
+      const idSalvo = await persistirRascunho({ automatico: false, payload });
+      if (!idSalvo) return;
 
       if (enviar) {
-        await api.enviarPedido(resposta.pedido.id);
+        await api.enviarPedido(idSalvo);
         prepararNovoPlano(
           'Pedido enviado para a central. Ele já está em Meus pedidos — monte o próximo plano abaixo.',
         );
         return;
       }
 
-      prepararNovoPlano(
-        'Rascunho salvo em Meus pedidos. A tela está pronta para um novo plano de corte.',
-      );
+      setMensagemOk('Rascunho salvo. O plano continua aberto e as alterações também são salvas automaticamente.');
+      pausarAutosave.current = false;
     } catch (falha) {
       setErroGeral(falha instanceof ErroApi ? falha.message : 'Não foi possível salvar o pedido');
+      pausarAutosave.current = false;
     } finally {
       setSalvando(false);
     }
   }
 
   async function reabrirParaEditar() {
-    if (!id) return;
+    if (!pedidoId) return;
     setErroGeral(null);
     setReabrindo(true);
     try {
-      const resposta = await api.reabrirPedido(id);
+      const resposta = await api.reabrirPedido(pedidoId);
       setStatusPedido(resposta.pedido.status);
       setFormulario(aplicarCatalogo(pedidoParaFormulario(resposta.pedido), produtos));
-      setMensagemOk('Pedido reaberto como rascunho. Ajuste o plano e envie de novo para a central.');
+      ultimoPayloadSalvo.current = JSON.stringify(formularioParaPayload(pedidoParaFormulario(resposta.pedido)));
+      setMensagemOk('Pedido reaberto como rascunho. Ajuste o plano — o salvamento automático está ativo.');
+      pausarAutosave.current = false;
     } catch (falha) {
       setErroGeral(falha instanceof ErroApi ? falha.message : 'Não foi possível reabrir o plano');
     } finally {
@@ -398,11 +564,24 @@ export function EditorPedido() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-stone-900">
-            {id ? 'Editar plano de corte' : 'Novo plano de corte'}
+            {pedidoId ? 'Editar plano de corte' : 'Novo plano de corte'}
           </h1>
           <p className="mt-1 text-sm text-stone-500">
             Lance as medidas em milímetros e escolha o MDF cadastrado pela central em cada peça.
           </p>
+          {podeEditar && textoAutosave && (
+            <p
+              className={
+                autoStatus === 'erro'
+                  ? 'mt-1 text-xs font-medium text-rose-600'
+                  : autoStatus === 'salvando' || autoStatus === 'pendente'
+                    ? 'mt-1 text-xs font-medium text-amber-700'
+                    : 'mt-1 text-xs font-medium text-emerald-700'
+              }
+            >
+              {textoAutosave}
+            </p>
+          )}
         </div>
         <div className="flex gap-2">
           {podeReabrir && (
@@ -412,16 +591,16 @@ export function EditorPedido() {
           )}
           {podeEditar && (
             <>
-              <Botao variante="secundario" onClick={() => salvar(false)} carregando={salvando}>
+              <Botao variante="secundario" onClick={() => void salvar(false)} carregando={salvando}>
                 Salvar rascunho
               </Botao>
-              <Botao onClick={() => salvar(true)} carregando={salvando}>
+              <Botao onClick={() => void salvar(true)} carregando={salvando}>
                 Enviar para a central
               </Botao>
             </>
           )}
-          {!podeEditar && !podeReabrir && id && (
-            <Botao variante="secundario" onClick={() => navegar(`${base}/pedidos/${id}`)}>
+          {!podeEditar && !podeReabrir && pedidoId && (
+            <Botao variante="secundario" onClick={() => navegar(`${base}/pedidos/${pedidoId}`)}>
               Voltar ao pedido
             </Botao>
           )}
@@ -451,7 +630,7 @@ export function EditorPedido() {
       <section className="cartao p-5">
         <h2 className="mb-4 text-base font-bold text-stone-900">1. Dados do projeto</h2>
         <div className="grid gap-4 md:grid-cols-3">
-          {ehAdmin && !id && (
+          {ehAdmin && !pedidoId && (
             <label className="block md:col-span-3">
               <span className="rotulo">Cliente do pedido (opcional)</span>
               <select
@@ -628,15 +807,18 @@ export function EditorPedido() {
       </div>
 
       <div className="flex flex-wrap justify-end gap-3 pb-6">
-        <Botao variante="secundario" onClick={() => navegar(id ? `${base}/pedidos/${id}` : base)}>
+        <Botao
+          variante="secundario"
+          onClick={() => navegar(pedidoId ? `${base}/pedidos/${pedidoId}` : base)}
+        >
           Voltar
         </Botao>
         {podeEditar && (
           <>
-            <Botao variante="secundario" onClick={() => salvar(false)} carregando={salvando}>
+            <Botao variante="secundario" onClick={() => void salvar(false)} carregando={salvando}>
               Salvar rascunho
             </Botao>
-            <Botao onClick={() => salvar(true)} carregando={salvando}>
+            <Botao onClick={() => void salvar(true)} carregando={salvando}>
               Enviar para a central
             </Botao>
           </>
