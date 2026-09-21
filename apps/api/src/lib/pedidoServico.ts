@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import {
   pedidoCompletoSchema,
+  pedidoRascunhoSchema,
   pedidoEditavelPeloCliente,
   pedidoReabivelPeloCliente,
   RECURSOS,
@@ -8,7 +9,7 @@ import {
   ehPapelCliente,
   garantirTransicaoOperador,
   pedidoVisivelOperador,
-  type PedidoInput,
+  type PedidoRascunhoInput,
   type StatusPedido,
 } from '@cortemadepinus/shared';
 import { env } from '../env';
@@ -31,12 +32,12 @@ export const TRANSICOES: Record<StatusPedido, StatusPedido[]> = {
   CANCELADO: [],
 };
 
-export function validarPedido(entrada: unknown): PedidoInput {
-  return pedidoCompletoSchema.parse(entrada);
+export function validarPedido(entrada: unknown): PedidoRascunhoInput {
+  return pedidoRascunhoSchema.parse(entrada);
 }
 
 /** Monta os registros de material e peca a partir da entrada validada. */
-function montarFilhos(dados: PedidoInput) {
+function montarFilhos(dados: PedidoRascunhoInput) {
   const materiais = dados.materiais.map((material, ordem) => ({
     codigo: material.codigo,
     descricao: material.descricao,
@@ -85,7 +86,7 @@ export async function criarPedido(clienteId: string, entrada: unknown) {
   }
 }
 
-async function gravarNovoPedido(clienteId: string, dados: PedidoInput) {
+async function gravarNovoPedido(clienteId: string, dados: PedidoRascunhoInput) {
   const { materiais } = montarFilhos(dados);
 
   const pedido = await prisma.$transaction(async (tx) => {
@@ -115,7 +116,7 @@ async function gravarNovoPedido(clienteId: string, dados: PedidoInput) {
 function montarPecas(
   pedidoId: string,
   materiais: Array<{ id: string; codigo: number }>,
-  dados: PedidoInput,
+  dados: PedidoRascunhoInput,
 ): Prisma.PecaCreateManyInput[] {
   const porCodigo = new Map(materiais.map((m) => [m.codigo, m.id]));
   return dados.pecas.map((peca, ordem) => {
@@ -130,7 +131,7 @@ function montarPecas(
       quantidade: peca.quantidade,
       largura: peca.largura,
       altura: peca.altura,
-      descricao: peca.descricao,
+      descricao: peca.descricao || 'Peça',
       veio: peca.veio ?? 'INDIFERENTE',
       fitaL1: RECURSOS.fitaDeBorda ? (peca.fitaL1 ?? false) : false,
       fitaL2: RECURSOS.fitaDeBorda ? (peca.fitaL2 ?? false) : false,

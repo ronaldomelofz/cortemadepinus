@@ -124,6 +124,24 @@ export const pecaSchema = z.object({
 });
 export type PecaInput = z.infer<typeof pecaSchema>;
 
+/** Peça incompleta permitida só em rascunho (salvamento automático entre aparelhos). */
+export const pecaRascunhoSchema = z.object({
+  id: z.string().optional(),
+  materialCodigo: z.number().int().min(1).max(99999),
+  codigo: z.number().int().min(1).max(999999),
+  quantidade: z.number().int().min(1).max(LIMITES.quantidadeMaxima).default(1),
+  largura: z.number().int().min(0).max(LIMITES.chapaMaxima),
+  altura: z.number().int().min(0).max(LIMITES.chapaMaxima),
+  descricao: z.string().trim().max(60).default(''),
+  veio: z.enum(VEIOS).default('INDIFERENTE'),
+  fitaL1: z.boolean().default(false),
+  fitaL2: z.boolean().default(false),
+  fitaC1: z.boolean().default(false),
+  fitaC2: z.boolean().default(false),
+  observacao: z.string().trim().max(120).optional().or(z.literal('')),
+});
+export type PecaRascunhoInput = z.infer<typeof pecaRascunhoSchema>;
+
 export const pedidoSchema = z.object({
   titulo: z.string().trim().min(3, 'Informe um título para o projeto').max(120),
   ambiente: z.string().trim().max(120).optional().or(z.literal('')),
@@ -136,6 +154,51 @@ export const pedidoSchema = z.object({
     .max(LIMITES.maxPecasPorPedido, 'Limite de peças por pedido excedido'),
 });
 export type PedidoInput = z.infer<typeof pedidoSchema>;
+
+/**
+ * Rascunho para salvamento automático no servidor (continuar em outro computador).
+ * Aceita plano incompleto; o envio à central continua exigindo pedidoCompletoSchema.
+ */
+export const pedidoRascunhoSchema = z
+  .object({
+    titulo: z
+      .string()
+      .trim()
+      .max(120)
+      .transform((titulo) => (titulo.length > 0 ? titulo : 'Rascunho')),
+    ambiente: z.string().trim().max(120).optional().or(z.literal('')),
+    observacoes: z.string().trim().max(2000).optional().or(z.literal('')),
+    prazoDesejado: z.string().trim().max(30).optional().or(z.literal('')),
+    materiais: z.array(materialSchema).max(500),
+    pecas: z.array(pecaRascunhoSchema).max(LIMITES.maxPecasPorPedido),
+  })
+  .superRefine((valor, ctx) => {
+    const codigos = new Set(valor.materiais.map((m) => m.codigo));
+    if (codigos.size !== valor.materiais.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['materiais'],
+        message: 'Existem materiais com o mesmo código',
+      });
+    }
+    if (valor.pecas.length > 0 && valor.materiais.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['materiais'],
+        message: 'Inclua ao menos um material para as peças do rascunho',
+      });
+    }
+    valor.pecas.forEach((peca, indice) => {
+      if (!codigos.has(peca.materialCodigo)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['pecas', indice, 'materialCodigo'],
+          message: `Material ${peca.materialCodigo} não está cadastrado no pedido`,
+        });
+      }
+    });
+  });
+export type PedidoRascunhoInput = z.infer<typeof pedidoRascunhoSchema>;
 
 /** Valida que toda peca aponta para um material declarado no pedido. */
 export const pedidoCompletoSchema = pedidoSchema.superRefine((valor, ctx) => {

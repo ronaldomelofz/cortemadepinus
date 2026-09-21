@@ -5,6 +5,7 @@ import {
   formatarMoeda,
   importarPecas,
   pedidoCompletoSchema,
+  pedidoRascunhoSchema,
   pedidoEditavelPeloCliente,
   pedidoReabivelPeloCliente,
   SERRA_PADRAO_MM,
@@ -25,6 +26,7 @@ import {
   aplicarCatalogo,
   formularioInicial,
   formularioParaPayload,
+  formularioParaRascunhoPayload,
   novaChave,
   pecaVazia,
   pedidoParaFormulario,
@@ -42,19 +44,20 @@ type StatusAutosave = 'ocioso' | 'pendente' | 'salvando' | 'salvo' | 'local' | '
 const ATRASO_AUTOSAVE_MS = 1200;
 const ATRASO_RASCUNHO_LOCAL_MS = 400;
 
-function payloadValido(formulario: PedidoForm) {
-  const payload = formularioParaPayload(formulario);
-  const validacao = pedidoCompletoSchema.safeParse(payload);
+function payloadRascunhoValido(formulario: PedidoForm) {
+  if (!formularioTemConteudo(formulario)) return null;
+  const payload = formularioParaRascunhoPayload(formulario);
+  const validacao = pedidoRascunhoSchema.safeParse(payload);
   return validacao.success ? validacao.data : null;
 }
 
 function rotuloAutosave(status: StatusAutosave, salvoEm: Date | null): string | null {
   if (status === 'pendente') return 'Alterações pendentes…';
-  if (status === 'salvando') return 'Salvando rascunho…';
-  if (status === 'local') return 'Rascunho guardado neste aparelho (aguardando dados completos para o servidor)';
-  if (status === 'erro') return 'Falha ao salvar no servidor — o rascunho continua neste aparelho';
+  if (status === 'salvando') return 'Salvando rascunho no servidor…';
+  if (status === 'local') return 'Rascunho neste aparelho — sincronizando com o servidor…';
+  if (status === 'erro') return 'Falha ao salvar no servidor — tentaremos de novo';
   if (status === 'salvo' && salvoEm) {
-    return `Rascunho salvo às ${salvoEm.toLocaleTimeString('pt-BR', {
+    return `Rascunho salvo no servidor às ${salvoEm.toLocaleTimeString('pt-BR', {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
@@ -463,13 +466,25 @@ export function EditorPedido() {
 
   async function persistirRascunho(opcoes: {
     automatico: boolean;
-    payload?: NonNullable<ReturnType<typeof payloadValido>>;
+    payload?: NonNullable<ReturnType<typeof payloadRascunhoValido>>;
   }) {
     const payload =
-      opcoes.payload ?? (opcoes.automatico ? payloadValido(formularioRef.current) : validar(true));
+      opcoes.payload ??
+      (opcoes.automatico
+        ? payloadRascunhoValido(formularioRef.current)
+        : (() => {
+            const bruto = formularioParaRascunhoPayload(formulario);
+            const validacao = pedidoRascunhoSchema.safeParse(bruto);
+            if (!validacao.success) {
+              setErrosGerais(validacao.error.issues.map((i) => i.message));
+              return null;
+            }
+            setErrosGerais([]);
+            setErrosPecas({});
+            return validacao.data;
+          })());
     if (!payload) {
       if (opcoes.automatico) {
-        // Plano incompleto: mantém só o rascunho local (já gravado no efeito dedicado).
         setAutoStatus(formularioTemConteudo(formularioRef.current) ? 'local' : 'ocioso');
       }
       return null;
@@ -583,28 +598,42 @@ export function EditorPedido() {
     if (!podeEditar) return;
     setErroGeral(null);
     setMensagemOk(null);
-    const payload = validar(true);
-    if (!payload) return;
 
-    if (enviar && !confirmarEnvioParaCentral(payload.pecas.reduce((t, p) => t + p.quantidade, 0))) {
+    if (enviar) {
+      const payloadCompleto = validar(true);
+      if (!payloadCompleto) return;
+      if (!confirmarEnvioParaCentral(payloadCompleto.pecas.reduce((t, p) => t + p.quantidade, 0))) {
+        return;
+      }
+
+      setSalvando(true);
+      pausarAutosave.current = true;
+      try {
+        const rascunho = formularioParaRascunhoPayload(formulario);
+        const idSalvo = await persistirRascunho({
+          automatico: false,
+          payload: pedidoRascunhoSchema.parse(rascunho),
+        });
+        if (!idSalvo) return;
+        await api.enviarPedido(idSalvo);
+        prepararNovoPlano(
+          'Pedido enviado para a central. Ele já está em Meus pedidos — monte o próximo plano abaixo.',
+        );
+      } catch (falha) {
+        setErroGeral(falha instanceof ErroApi ? falha.message : 'Não foi possível salvar o pedido');
+        pausarAutosave.current = false;
+      } finally {
+        setSalvando(false);
+      }
       return;
     }
 
     setSalvando(true);
     pausarAutosave.current = true;
     try {
-      const idSalvo = await persistirRascunho({ automatico: false, payload });
+      const idSalvo = await persistirRascunho({ automatico: false });
       if (!idSalvo) return;
-
-      if (enviar) {
-        await api.enviarPedido(idSalvo);
-        prepararNovoPlano(
-          'Pedido enviado para a central. Ele já está em Meus pedidos — monte o próximo plano abaixo.',
-        );
-        return;
-      }
-
-      setMensagemOk('Rascunho salvo no servidor. As alterações também ficam guardadas neste aparelho.');
+      setMensagemOk('Rascunho salvo no servidor. Você pode continuar este plano em qualquer computador.');
       pausarAutosave.current = false;
     } catch (falha) {
       setErroGeral(falha instanceof ErroApi ? falha.message : 'Não foi possível salvar o pedido');

@@ -210,9 +210,9 @@ export function pedidoParaFormulario(pedido: Pedido): PedidoForm {
       codigo: String(peca.codigo),
       materialCodigo: String(porId.get(peca.materialId) ?? ''),
       quantidade: String(peca.quantidade),
-      largura: String(peca.largura),
-      altura: String(peca.altura),
-      descricao: peca.descricao,
+      largura: peca.largura > 0 ? String(peca.largura) : '',
+      altura: peca.altura > 0 ? String(peca.altura) : '',
+      descricao: peca.descricao === 'Peça' ? '' : peca.descricao,
       veio: peca.veio,
       fitaC1: peca.fitaC1,
       fitaC2: peca.fitaC2,
@@ -256,19 +256,107 @@ export function formularioParaPayload(formulario: PedidoForm) {
       const material = materiais.find((m) => m.codigo === peca.materialCodigo);
       const veio = material?.permiteRotacao === false ? 'COMPRIMENTO' : 'INDIFERENTE';
       return {
-      codigo: Math.round(numero(peca.codigo)),
-      materialCodigo: Math.round(numero(peca.materialCodigo)),
-      quantidade: Math.round(numero(peca.quantidade)),
-      largura: Math.round(numero(peca.largura)),
-      altura: Math.round(numero(peca.altura)),
-      descricao: peca.descricao.trim(),
-      veio,
-      fitaC1: false,
-      fitaC2: false,
-      fitaL1: false,
-      fitaL2: false,
-      observacao: peca.observacao.trim(),
-    };
+        codigo: Math.round(numero(peca.codigo)),
+        materialCodigo: Math.round(numero(peca.materialCodigo)),
+        quantidade: Math.round(numero(peca.quantidade)),
+        largura: Math.round(numero(peca.largura)),
+        altura: Math.round(numero(peca.altura)),
+        descricao: peca.descricao.trim(),
+        veio,
+        fitaC1: false,
+        fitaC2: false,
+        fitaL1: false,
+        fitaL2: false,
+        observacao: peca.observacao.trim(),
+      };
+    }),
+  };
+}
+
+function pecaTemConteudoDigitado(peca: PecaForm): boolean {
+  return Boolean(
+    peca.descricao.trim() ||
+      peca.largura.trim() ||
+      peca.altura.trim() ||
+      peca.materialCodigo.trim() ||
+      (peca.quantidade.trim() && peca.quantidade.trim() !== '1') ||
+      peca.observacao.trim(),
+  );
+}
+
+/**
+ * Payload permissivo para salvamento automático no servidor.
+ * Mantém o que já foi digitado mesmo incompleto (continuar em outro PC).
+ */
+export function formularioParaRascunhoPayload(formulario: PedidoForm) {
+  const pecasComConteudo = formulario.pecas.filter(pecaTemConteudoDigitado);
+  const codigosUsados = new Set(
+    pecasComConteudo.map((peca) => peca.materialCodigo).filter((codigo) => codigo.trim() !== ''),
+  );
+
+  let materiais = formulario.materiais.filter((material) => {
+    if (!material.codigo.trim()) return false;
+    if (codigosUsados.size === 0) return false;
+    return codigosUsados.has(material.codigo);
+  });
+
+  if (codigosUsados.size > 0 && materiais.length === 0) {
+    materiais = formulario.materiais.filter((m) => m.codigo.trim()).slice(0, 1);
+  }
+
+  if (materiais.length === 0 && pecasComConteudo.length > 0) {
+    materiais = [
+      {
+        chave: novaChave(),
+        codigo: pecasComConteudo[0].materialCodigo || '99000',
+        descricao: 'Material provisório',
+        espessura: '15',
+        cor: '',
+        chapaLargura: '2750',
+        chapaAltura: '1850',
+        fornecidoPeloCliente: false,
+        quantidadeChapas: '',
+        permiteRotacao: true,
+      },
+    ];
+  }
+
+  const materialPadrao = materiais[0]?.codigo ?? '';
+
+  return {
+    titulo: formulario.titulo.trim() || 'Rascunho',
+    ambiente: formulario.ambiente.trim(),
+    observacoes: formulario.observacoes.trim(),
+    prazoDesejado: formulario.prazoDesejado.trim(),
+    materiais: materiais.map((material) => ({
+      codigo: Math.max(1, Math.round(numero(material.codigo) || 99000)),
+      descricao: material.descricao.trim() || 'Material',
+      espessura: Math.max(0.1, numero(material.espessura) || 15),
+      cor: material.cor.trim(),
+      chapaLargura: Math.max(1, numero(material.chapaLargura) || 2750),
+      chapaAltura: Math.max(1, numero(material.chapaAltura) || 1850),
+      fornecidoPeloCliente: material.fornecidoPeloCliente,
+      quantidadeChapas: material.quantidadeChapas ? numero(material.quantidadeChapas) : null,
+      permiteRotacao: material.permiteRotacao !== false,
+    })),
+    pecas: pecasComConteudo.map((peca, indice) => {
+      const materialCodigoBruto = peca.materialCodigo.trim() || materialPadrao;
+      const material = materiais.find((m) => m.codigo === materialCodigoBruto) ?? materiais[0];
+      const veio = material?.permiteRotacao === false ? 'COMPRIMENTO' : 'INDIFERENTE';
+      return {
+        codigo: Math.max(1, Math.round(numero(peca.codigo) || indice + 1)),
+        materialCodigo: Math.max(1, Math.round(numero(materialCodigoBruto) || 99000)),
+        quantidade: Math.max(1, Math.round(numero(peca.quantidade) || 1)),
+        largura: Math.max(0, Math.round(numero(peca.largura) || 0)),
+        altura: Math.max(0, Math.round(numero(peca.altura) || 0)),
+        descricao: peca.descricao.trim(),
+        veio,
+        fitaC1: false,
+        fitaC2: false,
+        fitaL1: false,
+        fitaL2: false,
+        observacao: peca.observacao.trim(),
+      };
     }),
   };
 }
