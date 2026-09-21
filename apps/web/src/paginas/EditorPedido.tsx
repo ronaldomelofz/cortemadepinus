@@ -34,11 +34,13 @@ import {
   type PedidoForm,
 } from '../lib/formularioPedido';
 import { useSessao } from '../lib/sessao';
+import { rascunhoLocal } from '../lib/rascunhoLocal';
 
 type EstadoNavegacaoEditor = { mensagemOk?: string };
-type StatusAutosave = 'ocioso' | 'pendente' | 'salvando' | 'salvo' | 'erro';
+type StatusAutosave = 'ocioso' | 'pendente' | 'salvando' | 'salvo' | 'local' | 'erro';
 
-const ATRASO_AUTOSAVE_MS = 1600;
+const ATRASO_AUTOSAVE_MS = 1200;
+const ATRASO_RASCUNHO_LOCAL_MS = 400;
 
 function payloadValido(formulario: PedidoForm) {
   const payload = formularioParaPayload(formulario);
@@ -48,16 +50,31 @@ function payloadValido(formulario: PedidoForm) {
 
 function rotuloAutosave(status: StatusAutosave, salvoEm: Date | null): string | null {
   if (status === 'pendente') return 'Alterações pendentes…';
-  if (status === 'salvando') return 'Salvando automaticamente…';
-  if (status === 'erro') return 'Falha ao salvar automaticamente';
+  if (status === 'salvando') return 'Salvando rascunho…';
+  if (status === 'local') return 'Rascunho guardado neste aparelho (aguardando dados completos para o servidor)';
+  if (status === 'erro') return 'Falha ao salvar no servidor — o rascunho continua neste aparelho';
   if (status === 'salvo' && salvoEm) {
-    return `Salvo automaticamente às ${salvoEm.toLocaleTimeString('pt-BR', {
+    return `Rascunho salvo às ${salvoEm.toLocaleTimeString('pt-BR', {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
     })}`;
   }
   return null;
+}
+
+function formularioTemConteudo(formulario: PedidoForm): boolean {
+  if (formulario.titulo.trim() || formulario.ambiente.trim() || formulario.observacoes.trim()) {
+    return true;
+  }
+  return formulario.pecas.some(
+    (peca) =>
+      peca.descricao.trim() ||
+      peca.largura.trim() ||
+      peca.altura.trim() ||
+      (peca.quantidade.trim() && peca.quantidade.trim() !== '1') ||
+      peca.materialCodigo.trim(),
+  );
 }
 
 export function EditorPedido() {
@@ -67,6 +84,7 @@ export function EditorPedido() {
   const { usuario } = useSessao();
   const base = basePedidosPorPapel(usuario?.role);
   const ehAdmin = usuario?.role === 'ADMIN';
+  const usuarioId = usuario?.id ?? '';
   const [pedidoId, setPedidoId] = useState<string | undefined>(idRota);
   const [formulario, setFormulario] = useState<PedidoForm>(() => formularioInicial());
   const [carregando, setCarregando] = useState(Boolean(idRota));
@@ -122,6 +140,10 @@ export function EditorPedido() {
   function prepararNovoPlano(mensagem: string) {
     pausarAutosave.current = true;
     ultimoPayloadSalvo.current = '';
+    if (usuarioId) {
+      rascunhoLocal.limpar(usuarioId, pedidoIdRef.current);
+      rascunhoLocal.limpar(usuarioId, null);
+    }
     setPedidoId(undefined);
     setAutoStatus('ocioso');
     setSalvoEm(null);
@@ -176,13 +198,22 @@ export function EditorPedido() {
       setCatalogoPronto(true);
 
       if (!idRota) {
-        setFormulario((atual) => aplicarCatalogo(atual, catalogo.itens));
+        const local = usuarioId ? rascunhoLocal.ler(usuarioId, null) : null;
+        if (local?.formulario && formularioTemConteudo(local.formulario)) {
+          setFormulario(aplicarCatalogo(local.formulario, catalogo.itens));
+          setClienteId(local.clienteId || '');
+          setAutoStatus('local');
+          setMensagemOk('Rascunho recuperado deste aparelho. Continue de onde parou — o salvamento automático está ativo.');
+        } else {
+          setFormulario((atual) => aplicarCatalogo(atual, catalogo.itens));
+        }
         pausarAutosave.current = false;
         return;
       }
 
       if (pularProximoCarregamento.current) {
         pularProximoCarregamento.current = false;
+        if (usuarioId) rascunhoLocal.promover(usuarioId, idRota);
         pausarAutosave.current = false;
         setCarregando(false);
         return;
@@ -195,9 +226,25 @@ export function EditorPedido() {
         if (cancelado) return;
         setPedidoId(pedido.id);
         setStatusPedido(pedido.status);
-        const form = aplicarCatalogo(pedidoParaFormulario(pedido), catalogo.itens);
-        setFormulario(form);
-        ultimoPayloadSalvo.current = JSON.stringify(formularioParaPayload(form));
+        const formServidor = aplicarCatalogo(pedidoParaFormulario(pedido), catalogo.itens);
+        const local = usuarioId ? rascunhoLocal.ler(usuarioId, idRota) : null;
+        const localMaisNovo =
+          local &&
+          pedidoEditavelPeloCliente(pedido.status) &&
+          new Date(local.atualizadoEm).getTime() > new Date(pedido.atualizadoEm).getTime();
+
+        if (localMaisNovo && formularioTemConteudo(local.formulario)) {
+          setFormulario(aplicarCatalogo(local.formulario, catalogo.itens));
+          setClienteId(local.clienteId || '');
+          setAutoStatus('local');
+          setMensagemOk(
+            'Há alterações mais recentes neste aparelho. Elas foram restauradas e serão sincronizadas com o servidor.',
+          );
+        } else {
+          setFormulario(formServidor);
+          ultimoPayloadSalvo.current = JSON.stringify(formularioParaPayload(formServidor));
+        }
+
         if (pedidoReabivelPeloCliente(pedido.status)) {
           setErroGeral(null);
           setMensagemOk(
@@ -222,7 +269,7 @@ export function EditorPedido() {
     return () => {
       cancelado = true;
     };
-  }, [idRota]);
+  }, [idRota, usuarioId]);
 
   useEffect(() => {
     if (!ehAdmin || pedidoId) return;
@@ -421,7 +468,10 @@ export function EditorPedido() {
     const payload =
       opcoes.payload ?? (opcoes.automatico ? payloadValido(formularioRef.current) : validar(true));
     if (!payload) {
-      if (opcoes.automatico) setAutoStatus('ocioso');
+      if (opcoes.automatico) {
+        // Plano incompleto: mantém só o rascunho local (já gravado no efeito dedicado).
+        setAutoStatus(formularioTemConteudo(formularioRef.current) ? 'local' : 'ocioso');
+      }
       return null;
     }
 
@@ -456,6 +506,14 @@ export function EditorPedido() {
       setStatusPedido(resposta.pedido.status);
       setPedidoId(resposta.pedido.id);
       setSalvoEm(new Date());
+      if (usuarioId) {
+        rascunhoLocal.gravar(usuarioId, resposta.pedido.id, {
+          pedidoId: resposta.pedido.id,
+          clienteId: clienteIdRef.current,
+          formulario: formularioRef.current,
+        });
+        if (!idAtual) rascunhoLocal.promover(usuarioId, resposta.pedido.id);
+      }
       if (opcoes.automatico && geracaoInicio !== geracaoAutosave.current) {
         setAutoStatus('pendente');
       } else {
@@ -479,10 +537,27 @@ export function EditorPedido() {
     }
   }
 
+  /** Sempre guarda no aparelho o que já foi digitado (mesmo incompleto). */
+  useEffect(() => {
+    if (!podeEditar || carregando || !catalogoPronto || !usuarioId || pausarAutosave.current) return;
+    if (!formularioTemConteudo(formulario)) return;
+
+    const timer = window.setTimeout(() => {
+      rascunhoLocal.gravar(usuarioId, pedidoIdRef.current, {
+        pedidoId: pedidoIdRef.current ?? null,
+        clienteId: clienteIdRef.current,
+        formulario: formularioRef.current,
+      });
+      setAutoStatus((atual) => (atual === 'salvo' || atual === 'salvando' ? atual : 'local'));
+    }, ATRASO_RASCUNHO_LOCAL_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [formulario, clienteId, podeEditar, carregando, catalogoPronto, usuarioId]);
+
   useEffect(() => {
     if (!podeEditar || carregando || !catalogoPronto || pausarAutosave.current) return;
 
-    setAutoStatus((atual) => (atual === 'salvo' || atual === 'ocioso' ? 'pendente' : atual));
+    setAutoStatus((atual) => (atual === 'salvo' || atual === 'ocioso' || atual === 'local' ? 'pendente' : atual));
     const geracao = ++geracaoAutosave.current;
     const timer = window.setTimeout(() => {
       if (geracao !== geracaoAutosave.current) return;
@@ -495,7 +570,7 @@ export function EditorPedido() {
 
   useEffect(() => {
     const avisar = (evento: BeforeUnloadEvent) => {
-      if (autoStatus === 'pendente' || autoStatus === 'salvando') {
+      if (autoStatus === 'pendente' || autoStatus === 'salvando' || autoStatus === 'local') {
         evento.preventDefault();
         evento.returnValue = '';
       }
@@ -529,7 +604,7 @@ export function EditorPedido() {
         return;
       }
 
-      setMensagemOk('Rascunho salvo. O plano continua aberto e as alterações também são salvas automaticamente.');
+      setMensagemOk('Rascunho salvo no servidor. As alterações também ficam guardadas neste aparelho.');
       pausarAutosave.current = false;
     } catch (falha) {
       setErroGeral(falha instanceof ErroApi ? falha.message : 'Não foi possível salvar o pedido');
@@ -574,7 +649,7 @@ export function EditorPedido() {
               className={
                 autoStatus === 'erro'
                   ? 'mt-1 text-xs font-medium text-rose-600'
-                  : autoStatus === 'salvando' || autoStatus === 'pendente'
+                  : autoStatus === 'salvando' || autoStatus === 'pendente' || autoStatus === 'local'
                     ? 'mt-1 text-xs font-medium text-amber-700'
                     : 'mt-1 text-xs font-medium text-emerald-700'
               }
