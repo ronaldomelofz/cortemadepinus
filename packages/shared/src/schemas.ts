@@ -26,7 +26,7 @@ export const registroFormularioSchema = registroSchema
     confirmarSenha: z.string().min(1, 'Confirme a senha'),
   })
   .refine((dados) => dados.senha === dados.confirmarSenha, {
-    message: 'As senhas não coincidem',
+    message: 'As senhas devem ser iguais',
     path: ['confirmarSenha'],
   });
 export type RegistroFormularioInput = z.infer<typeof registroFormularioSchema>;

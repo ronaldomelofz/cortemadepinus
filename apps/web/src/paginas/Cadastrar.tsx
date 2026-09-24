@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { registroFormularioSchema } from '@cortemadepinus/shared';
 import { Marca } from '../componentes/Layout';
-import { Aviso, Botao, Campo } from '../componentes/ui';
+import { Aviso, Botao, Campo, CampoSenha } from '../componentes/ui';
 import { ErroApi } from '../lib/api';
 import { useSessao } from '../lib/sessao';
 
@@ -24,13 +24,41 @@ export function Cadastrar() {
   const [sucesso, setSucesso] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
 
-  const alterar = (campo: keyof typeof INICIAL) => (evento: React.ChangeEvent<HTMLInputElement>) =>
-    setDados((atual) => ({ ...atual, [campo]: evento.target.value }));
+  const senhasIguais = useMemo(() => {
+    if (!dados.senha || !dados.confirmarSenha) return null;
+    return dados.senha === dados.confirmarSenha;
+  }, [dados.senha, dados.confirmarSenha]);
+
+  const alterar = (campo: keyof typeof INICIAL) => (evento: React.ChangeEvent<HTMLInputElement>) => {
+    const valor = evento.target.value;
+    setDados((atual) => {
+      const proximo = { ...atual, [campo]: valor };
+      setErros((errosAtuais) => {
+        const proximos = { ...errosAtuais };
+        delete proximos[campo];
+        if (campo === 'senha' || campo === 'confirmarSenha') {
+          if (proximo.senha && proximo.confirmarSenha && proximo.senha !== proximo.confirmarSenha) {
+            proximos.confirmarSenha = 'As senhas devem ser iguais';
+          } else {
+            delete proximos.confirmarSenha;
+          }
+        }
+        return proximos;
+      });
+      return proximo;
+    });
+  };
 
   async function submeter(evento: React.FormEvent) {
     evento.preventDefault();
     setErroGeral(null);
     setSucesso(null);
+
+    if (dados.senha !== dados.confirmarSenha) {
+      setErros((atual) => ({ ...atual, confirmarSenha: 'As senhas devem ser iguais' }));
+      setErroGeral('As senhas precisam ser iguais para criar a conta.');
+      return;
+    }
 
     const validacao = registroFormularioSchema.safeParse(dados);
     if (!validacao.success) {
@@ -86,29 +114,34 @@ export function Cadastrar() {
                 onChange={alterar('email')}
                 erro={erros.email}
               />
-              <Campo
+              <CampoSenha
                 rotulo="Senha *"
-                type="password"
                 autoComplete="new-password"
                 value={dados.senha}
                 onChange={alterar('senha')}
                 erro={erros.senha}
-                ajuda="Mínimo de 8 caracteres"
+                ajuda="Mínimo de 8 caracteres. Use o ícone para visualizar."
               />
-              <Campo
+              <CampoSenha
                 rotulo="Confirmar senha *"
-                type="password"
                 autoComplete="new-password"
                 value={dados.confirmarSenha}
                 onChange={alterar('confirmarSenha')}
                 erro={erros.confirmarSenha}
+                ok={senhasIguais === true ? 'Senhas iguais' : undefined}
+                ajuda={senhasIguais === null ? 'Digite a mesma senha novamente' : undefined}
               />
               <Campo rotulo="Telefone / WhatsApp" value={dados.telefone} onChange={alterar('telefone')} />
               <Campo rotulo="Empresa / Marcenaria" value={dados.empresa} onChange={alterar('empresa')} />
               <Campo rotulo="CPF / CNPJ" value={dados.documento} onChange={alterar('documento')} />
             </div>
 
-            <Botao type="submit" carregando={enviando} className="w-full">
+            <Botao
+              type="submit"
+              carregando={enviando}
+              className="w-full"
+              disabled={senhasIguais === false}
+            >
               Criar conta
             </Botao>
           </>

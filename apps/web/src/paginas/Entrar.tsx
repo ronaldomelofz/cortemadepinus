@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Marca } from '../componentes/Layout';
-import { Aviso, Botao, Campo } from '../componentes/ui';
+import { Aviso, Botao, Campo, CampoSenha } from '../componentes/ui';
 import { ErroApi } from '../lib/api';
 import { destinoPorPapel } from '../lib/destino';
 import {
@@ -127,11 +127,10 @@ export function Entrar() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
-        <Campo
+        <CampoSenha
           rotulo="Senha"
           name="password"
           id="login-senha"
-          type="password"
           autoComplete="current-password"
           required
           value={senha}

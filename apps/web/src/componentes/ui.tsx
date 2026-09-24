@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react';
+import { useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react';
 import { STATUS_COR, STATUS_LABEL, type StatusPedido } from '@cortemadepinus/shared';
 
 type Variante = 'primario' | 'secundario' | 'perigo' | 'fantasma';
@@ -41,14 +41,83 @@ interface CampoProps extends InputHTMLAttributes<HTMLInputElement> {
   rotulo: string;
   erro?: string;
   ajuda?: string;
+  ok?: string;
 }
 
-export function Campo({ rotulo, erro, ajuda, className, ...props }: CampoProps) {
+export function Campo({ rotulo, erro, ajuda, ok, className, ...props }: CampoProps) {
   return (
     <label className="block">
       <span className="rotulo">{rotulo}</span>
-      <input {...props} className={clsx('campo', erro && 'border-rose-400 ring-rose-100', className)} />
-      {ajuda && !erro && <span className="mt-1 block text-xs text-stone-500">{ajuda}</span>}
+      <input
+        {...props}
+        className={clsx(
+          'campo',
+          erro && 'border-rose-400 ring-rose-100',
+          !erro && ok && 'border-emerald-400 ring-emerald-100',
+          className,
+        )}
+      />
+      {ajuda && !erro && !ok && <span className="mt-1 block text-xs text-stone-500">{ajuda}</span>}
+      {ok && !erro && <span className="mt-1 block text-xs font-medium text-emerald-700">{ok}</span>}
+      {erro && <span className="mt-1 block text-xs font-medium text-rose-600">{erro}</span>}
+    </label>
+  );
+}
+
+/** Campo de senha com botão para mostrar/ocultar o texto. */
+export function CampoSenha({
+  rotulo,
+  erro,
+  ajuda,
+  ok,
+  className,
+  ...props
+}: Omit<CampoProps, 'type'>) {
+  const [visivel, setVisivel] = useState(false);
+
+  return (
+    <label className="block">
+      <span className="rotulo">{rotulo}</span>
+      <div className="relative">
+        <input
+          {...props}
+          type={visivel ? 'text' : 'password'}
+          className={clsx(
+            'campo pr-11',
+            erro && 'border-rose-400 ring-rose-100',
+            !erro && ok && 'border-emerald-400 ring-emerald-100',
+            className,
+          )}
+        />
+        <button
+          type="button"
+          onClick={() => setVisivel((atual) => !atual)}
+          className="absolute inset-y-0 right-0 flex items-center px-3 text-stone-500 hover:text-madeira-800"
+          aria-label={visivel ? 'Ocultar senha' : 'Mostrar senha'}
+          tabIndex={-1}
+        >
+          {visivel ? (
+            <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path
+                d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.1A9.8 9.8 0 0 1 12 4.8c5 0 9.3 3.1 11 7.2a12.4 12.4 0 0 1-4.2 4.8M6.1 6.1A12.3 12.3 0 0 0 1 12c1.7 4.1 6 7.2 11 7.2 1.4 0 2.7-.2 4-.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path
+                d="M1 12s4-7.2 11-7.2S23 12 23 12s-4 7.2-11 7.2S1 12 1 12Z"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          )}
+        </button>
+      </div>
+      {ajuda && !erro && !ok && <span className="mt-1 block text-xs text-stone-500">{ajuda}</span>}
+      {ok && !erro && <span className="mt-1 block text-xs font-medium text-emerald-700">{ok}</span>}
       {erro && <span className="mt-1 block text-xs font-medium text-rose-600">{erro}</span>}
     </label>
   );
