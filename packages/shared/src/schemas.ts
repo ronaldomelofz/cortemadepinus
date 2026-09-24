@@ -20,6 +20,17 @@ export const registroSchema = z.object({
 });
 export type RegistroInput = z.infer<typeof registroSchema>;
 
+/** Formulário público de cadastro — inclui confirmação de senha. */
+export const registroFormularioSchema = registroSchema
+  .extend({
+    confirmarSenha: z.string().min(1, 'Confirme a senha'),
+  })
+  .refine((dados) => dados.senha === dados.confirmarSenha, {
+    message: 'As senhas não coincidem',
+    path: ['confirmarSenha'],
+  });
+export type RegistroFormularioInput = z.infer<typeof registroFormularioSchema>;
+
 export const loginSchema = z.object({
   /** Aceita e-mail completo ou só o usuário (ex.: ronalo → ronalo@…). */
   email: z.string().trim().toLowerCase().min(3, 'Informe o usuário ou e-mail').max(120),

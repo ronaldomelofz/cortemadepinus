@@ -1,12 +1,20 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { registroSchema } from '@cortemadepinus/shared';
+import { registroFormularioSchema } from '@cortemadepinus/shared';
 import { Marca } from '../componentes/Layout';
 import { Aviso, Botao, Campo } from '../componentes/ui';
 import { ErroApi } from '../lib/api';
 import { useSessao } from '../lib/sessao';
 
-const INICIAL = { nome: '', email: '', senha: '', telefone: '', empresa: '', documento: '' };
+const INICIAL = {
+  nome: '',
+  email: '',
+  senha: '',
+  confirmarSenha: '',
+  telefone: '',
+  empresa: '',
+  documento: '',
+};
 
 export function Cadastrar() {
   const { cadastrar } = useSessao();
@@ -24,7 +32,7 @@ export function Cadastrar() {
     setErroGeral(null);
     setSucesso(null);
 
-    const validacao = registroSchema.safeParse(dados);
+    const validacao = registroFormularioSchema.safeParse(dados);
     if (!validacao.success) {
       setErros(
         Object.fromEntries(validacao.error.issues.map((i) => [String(i.path[0]), i.message])),
@@ -34,7 +42,8 @@ export function Cadastrar() {
     setErros({});
     setEnviando(true);
     try {
-      const resultado = await cadastrar(validacao.data);
+      const { confirmarSenha: _confirmacao, ...registro } = validacao.data;
+      const resultado = await cadastrar(registro);
       setSucesso(resultado.mensagem);
       setDados(INICIAL);
     } catch (falha) {
@@ -85,6 +94,14 @@ export function Cadastrar() {
                 onChange={alterar('senha')}
                 erro={erros.senha}
                 ajuda="Mínimo de 8 caracteres"
+              />
+              <Campo
+                rotulo="Confirmar senha *"
+                type="password"
+                autoComplete="new-password"
+                value={dados.confirmarSenha}
+                onChange={alterar('confirmarSenha')}
+                erro={erros.confirmarSenha}
               />
               <Campo rotulo="Telefone / WhatsApp" value={dados.telefone} onChange={alterar('telefone')} />
               <Campo rotulo="Empresa / Marcenaria" value={dados.empresa} onChange={alterar('empresa')} />
