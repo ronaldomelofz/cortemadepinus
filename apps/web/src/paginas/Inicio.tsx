@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AvisoConfiguracao, Marca } from '../componentes/Layout';
 import { destinoPorPapel } from '../lib/destino';
@@ -45,6 +46,79 @@ const RECURSOS = [
   },
 ];
 
+const ACESSOS_ADMIN = [
+  { para: '/entrar?perfil=central', rotulo: 'Acesso administrador' },
+  { para: '/entrar?perfil=vendedor', rotulo: 'Acesso vendedor' },
+  { para: '/entrar?perfil=operador', rotulo: 'Acesso operador' },
+] as const;
+
+function MenuAdministrador() {
+  const [aberto, setAberto] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!aberto) return;
+    function fechar(evento: MouseEvent) {
+      if (ref.current && !ref.current.contains(evento.target as Node)) {
+        setAberto(false);
+      }
+    }
+    function tecla(evento: KeyboardEvent) {
+      if (evento.key === 'Escape') setAberto(false);
+    }
+    document.addEventListener('mousedown', fechar);
+    document.addEventListener('keydown', tecla);
+    return () => {
+      document.removeEventListener('mousedown', fechar);
+      document.removeEventListener('keydown', tecla);
+    };
+  }, [aberto]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setAberto((atual) => !atual)}
+        className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-madeira-800 ring-1 ring-inset ring-madeira-300 hover:bg-madeira-50"
+        aria-expanded={aberto}
+        aria-haspopup="menu"
+      >
+        Administrador
+        <svg
+          viewBox="0 0 20 20"
+          className={`size-4 transition ${aberto ? 'rotate-180' : ''}`}
+          fill="currentColor"
+          aria-hidden
+        >
+          <path
+            fillRule="evenodd"
+            d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.17l3.71-3.94a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z"
+            clipRule="evenodd"
+          />
+        </svg>
+      </button>
+      {aberto && (
+        <div
+          role="menu"
+          className="absolute right-0 z-30 mt-2 min-w-[14rem] rounded-xl border border-stone-200 bg-white p-1.5 shadow-lg"
+        >
+          {ACESSOS_ADMIN.map((item) => (
+            <Link
+              key={item.para}
+              to={item.para}
+              role="menuitem"
+              onClick={() => setAberto(false)}
+              className="block rounded-lg px-3 py-2 text-sm font-semibold text-madeira-800 hover:bg-madeira-50"
+            >
+              {item.rotulo}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Inicio() {
   const { usuario } = useSessao();
   const destino = usuario ? destinoPorPapel(usuario.role) : '/entrar';
@@ -68,24 +142,7 @@ export function Inicio() {
             >
               Acesso cliente
             </Link>
-            <Link
-              to="/entrar?perfil=central"
-              className="rounded-lg px-3 py-2 text-sm font-semibold text-madeira-800 ring-1 ring-inset ring-madeira-300 hover:bg-madeira-50"
-            >
-              Acesso administrador
-            </Link>
-            <Link
-              to="/entrar?perfil=vendedor"
-              className="rounded-lg px-3 py-2 text-sm font-semibold text-madeira-800 ring-1 ring-inset ring-madeira-300 hover:bg-madeira-50"
-            >
-              Acesso vendedor
-            </Link>
-            <Link
-              to="/entrar?perfil=operador"
-              className="rounded-lg px-3 py-2 text-sm font-semibold text-madeira-800 ring-1 ring-inset ring-madeira-300 hover:bg-madeira-50"
-            >
-              Acesso operador
-            </Link>
+            <MenuAdministrador />
             <Link
               to="/cadastrar"
               className="rounded-lg bg-madeira-700 px-4 py-2 text-sm font-semibold text-white hover:bg-madeira-800"
